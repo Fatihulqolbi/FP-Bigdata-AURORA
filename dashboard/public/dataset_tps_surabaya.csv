@@ -1,0 +1,205 @@
+id,name,kecamatan,kelurahan,lat,lng,capacity
+1,TPS 1 Asemrowo,Asemrowo,Asemrowo,-7.24937,112.69543,50
+2,TPS 2 - Balai RW.01 Asemrowo,Asemrowo,Asemrowo,-7.25142,112.71189,50
+3,TPS 3 - GOR / Lorong POS RT.09,Asemrowo,Asemrowo,-7.25038,112.71022,30
+4,TPS 4 - Lapangan Asemrowo 1,Asemrowo,Asemrowo,-7.24521,112.69982,30
+5,TPS 5 - Asemrowo III,Asemrowo,Asemrowo,-7.24973,112.69963,40
+6,TPS 6 - Asemrowo VI No. 5,Asemrowo,Asemrowo,-7.24967,112.70671,40
+7,TPS 7 - Asem V No. 2A,Asemrowo,Asemrowo,-7.25098,112.70704,40
+8,TPS 8 - Asem II,Asemrowo,Asemrowo,-7.25119,112.70163,15
+9,TPS 9 - Jl. Masjid No. 10,Asemrowo,Asemrowo,-7.24532,112.70997,40
+10,TPS 10 - Jl. Tambak VI Asemrowo Kali,Asemrowo,Asemrowo,-7.24635,112.70848,40
+11,TPS 11 - Asem IV B RT.13-RW.02,Asemrowo,Asemrowo,-7.25007,112.69573,20
+12,TPS 12 - Jl. Asemrowo Baru Depan POS RT.01,Asemrowo,Asemrowo,-7.24509,112.69677,10
+13,TPS 13 - Jl. Asem Mulya V No. 14,Asemrowo,Asemrowo,-7.24683,112.70902,25
+14,TPS 14 - Jl. Asem Mulya RT.01,Asemrowo,Asemrowo,-7.24741,112.6965,25
+15,TPS 15 - Asem Mulya XI No. 54,Asemrowo,Asemrowo,-7.24756,112.69248,25
+16,TPS 16 - Lapangan RT. 01,Asemrowo,Asemrowo,-7.24766,112.70121,25
+17,TPS 17 - Tambak Mayor III No. 5,Asemrowo,Asemrowo,-7.24578,112.69914,50
+18,TPS 18 - Tambak Mayor VIII,Asemrowo,Asemrowo,-7.24842,112.69529,20
+19,TPS 19 - Tambak Mayor Utara - Depan Rumah RT.07,Asemrowo,Asemrowo,-7.24678,112.70517,15
+20,TPS 20 - Tambak Mayor Utara RT.08 No. 24,Asemrowo,Asemrowo,-7.24702,112.69924,50
+21,TPS 21 - Tambak Mayor 6C,Asemrowo,Asemrowo,-7.25019,112.69114,25
+22,TPS 22 - Tambak Mayor Baru V,Asemrowo,Asemrowo,-7.2501,112.69714,10
+23,TPS 23 - Tambak Dalam Baru II No. 20,Asemrowo,Asemrowo,-7.24745,112.70587,20
+24,TPS 24 - Tambak Dalam Baru VI Depan Mushollah,Asemrowo,Asemrowo,-7.24944,112.70558,30
+25,TPS 25 - Tambak Dalam Baru I B No. 1,Asemrowo,Asemrowo,-7.2484,112.70965,20
+26,TPS 26 - Tambak Dalam Baru III,Asemrowo,Asemrowo,-7.24947,112.69664,10
+27,TPS 27 - Tambak Pring Timur I Depan Gudang,Asemrowo,Asemrowo,-7.24722,112.69189,40
+28,TPS 28 - Tambak Pring Timur V - Perempatan,Asemrowo,Asemrowo,-7.25077,112.69799,15
+29,TPS 29 - Jl. Raya Tambak Pring Timur Depan Rumah Bpk. Slamet,Asemrowo,Asemrowo,-7.24639,112.70146,15
+30,TPS 30 - Tambak Pring Timur II No. 33 A - Depan Masjid,Asemrowo,Asemrowo,-7.24967,112.69969,25
+31,TPS 31 - Tambak Mayor Madya II No. 10,Asemrowo,Asemrowo,-7.25152,112.69733,30
+32,TPS 32 - Tambak Mayor Baru II No. 72,Asemrowo,Asemrowo,-7.24662,112.70801,40
+33,TPS 33 - Tambak Mayor Barat II A Gg. Buntu,Asemrowo,Asemrowo,-7.25166,112.69668,20
+34,TPS 34 Asemrowo,Asemrowo,Asemrowo,-7.25056,112.69311,15
+35,TPS 35 Asemrowo,Asemrowo,Asemrowo,-7.24668,112.70443,40
+36,TPS 36 - Tambak Mayor Selatan II No. 4,Asemrowo,Asemrowo,-7.25083,112.69142,20
+37,TPS 37 - Tambak Mayor Barat No. 4 - Balai RT.04,Asemrowo,Asemrowo,-7.25114,112.70209,25
+38,TPS 38 - Tambak Mayor Utara No. 54,Asemrowo,Asemrowo,-7.24595,112.70394,20
+39,TPS 39 - Tambak Pring Barat No. 16 - di bawah POS Kamling,Asemrowo,Asemrowo,-7.25137,112.69181,40
+40,TPS 1 Asemrowo,Genting Kalianak,Asemrowo,-7.23038,112.67838,20
+41,TPS 2 - Kalianak Barat 36 Belakang - Balai RW.01,Genting Kalianak,Asemrowo,-7.23183,112.68366,50
+42,TPS 3 - Kalianak Barat 51 - Pergudangan 51,Genting Kalianak,Asemrowo,-7.23385,112.68444,15
+43,TPS 4 - Kalianak Barat 55 - Pergudangan 55,Genting Kalianak,Asemrowo,-7.2294,112.67709,15
+44,TPS 5 - Genting Tambak Dalam III RT.01-RW.02,Genting Kalianak,Asemrowo,-7.23234,112.68011,20
+45,TPS 6 - Genting Tambak Dalam No. 13 RT.02-RW.02,Genting Kalianak,Asemrowo,-7.23587,112.66679,25
+46,TPS 7 - Genting Tambak Dalam RT.03-RW.02,Genting Kalianak,Asemrowo,-7.23407,112.68713,50
+47,TPS 8 - Genting Tambak Dalam Blok A RT.05-RW.02,Genting Kalianak,Asemrowo,-7.23806,112.68929,40
+48,TPS 9 - Genting I No. 44,Genting Kalianak,Asemrowo,-7.22582,112.68281,50
+49,TPS 10 - Genting I - Depan POS RT.01-RW.03,Genting Kalianak,Asemrowo,-7.23785,112.67593,20
+50,TPS 11 - Genting IV No. 44 - Halaman SD Hanura Bina Putra,Genting Kalianak,Asemrowo,-7.23914,112.68056,25
+51,TPS 1 Asemrowo,Tambak Sarioso,Asemrowo,-7.21556,112.6586,30
+52,TPS 2 - Greges Barat Gang I,Tambak Sarioso,Asemrowo,-7.21505,112.67701,25
+53,TPS 3 - Halaman MINU - Greges Barat Gang V,Tambak Sarioso,Asemrowo,-7.22328,112.65829,15
+54,TPS 4 - Perum. Graha Mandiri - Greges Barat,Tambak Sarioso,Asemrowo,-7.21846,112.67922,10
+55,TPS 5 - Balai RW - Jl. Raya Greges Barat,Tambak Sarioso,Asemrowo,-7.21549,112.65595,25
+56,TPS 6 - Halaman TK Tunas Jaya - Greges Timur,Tambak Sarioso,Asemrowo,-7.22058,112.67481,25
+57,TPS 7 - Halaman SDN Greges - Tambak Pokak,Tambak Sarioso,Asemrowo,-7.21622,112.67445,25
+58,TPS 8 - Jl. Kelurahan Tambak Sarioso,Tambak Sarioso,Asemrowo,-7.22848,112.6689,20
+59,TPS 9 - Halaman MI Mambaul Ulum - Tambak Langon,Tambak Sarioso,Asemrowo,-7.22861,112.65498,20
+60,TPS 1 - Kandangan Gg I Surabaya,Benowo,Kandangan,-7.24777,112.64001,40
+61,TPS 2 - Kandangan Gg III Surabaya,Benowo,Kandangan,-7.26411,112.64794,10
+62,TPS 3 - Kandangan Gunung Surabaya,Benowo,Kandangan,-7.25406,112.65168,15
+63,TPS 4 - Kandangan Jaya 2 (Balai RT 05) Surabaya,Benowo,Kandangan,-7.26055,112.63663,40
+64,TPS 5 - Kandangan Rejo Gg Lebar (Balai RT 06),Benowo,Kandangan,-7.26131,112.64978,50
+65,TPS 6 - Kandangan Mulya Surabaya,Benowo,Kandangan,-7.26153,112.64365,10
+66,TPS 7 - Raya Kandangan Gunung Surabaya,Benowo,Kandangan,-7.25218,112.63618,50
+67,TPS 8 - Kandangan Gunung Tangsi Surabaya,Benowo,Kandangan,-7.25069,112.64521,50
+68,TPS 9 - Kandangan Gunung Dharma Surabaya,Benowo,Kandangan,-7.26014,112.65999,10
+69,TPS 10 - Tengger Raya III Surabaya,Benowo,Kandangan,-7.24635,112.64978,20
+70,TPS 11 - Tengger Raya ( Balai RW 02 ),Benowo,Kandangan,-7.24867,112.64332,20
+71,TPS 12 - Tengger Raya ( Balai RT 04 Sebelah Telaga),Benowo,Kandangan,-7.26338,112.65519,20
+72,TPS 13 - Tengger Kandangan ( SDN Kandangan II ),Benowo,Kandangan,-7.2502,112.65,20
+73,TPS 14 - Tengger Kandangan Timur ( Balai RW 03 ),Benowo,Kandangan,-7.25813,112.65109,25
+74,TPS 15 - Wisma Tengger Pipa ( Lap. Semen Gresik ),Benowo,Kandangan,-7.25575,112.64784,10
+75,TPS 16 - Wisma Tengger III ( Balai RW 04 ),Benowo,Kandangan,-7.2577,112.647,40
+76,TPS 17 - Tengger kandangan XXI ( Balai RW 05 ),Benowo,Kandangan,-7.24882,112.63644,15
+77,TPS 18 - Wisma Tengger XVI ( Balai RT 02 RW 06 ),Benowo,Kandangan,-7.25345,112.64693,25
+78,TPS 19 - Raya Wisma tengger ( Balai RT 06 ),Benowo,Kandangan,-7.24688,112.64173,25
+79,TPS 20 - Raya Jugrug Rejosari ( Balai RW 07 ),Benowo,Kandangan,-7.25826,112.64283,25
+80,TPS 21 - Klakahrejo Gg I,Benowo,Kandangan,-7.25598,112.63529,30
+81,TPS 22 - Klakahrejo Gg II,Benowo,Kandangan,-7.2646,112.65787,40
+82,TPS 23 - Klakahrejo Gg IV ( GOR FUTSAL Barkla ),Benowo,Kandangan,-7.24929,112.6576,40
+83,TPS 24 - Klakahrejo IV Gg Lebar ( POS RT 04 ),Benowo,Kandangan,-7.25111,112.65672,20
+84,TPS 25 - Klakahrejo Lor Gg Arwana,Benowo,Kandangan,-7.25028,112.64763,10
+85,TPS 26 - Klakahrejo Lor Gg IV,Benowo,Kandangan,-7.26009,112.65083,10
+86,TPS 1 - Jln Romokalisari RT 01 RW I,Benowo,Romokalisari,-7.21131,112.61011,30
+87,TPS 2 - Jln Romokalisari RW II Depan TK Sultan Agung,Benowo,Romokalisari,-7.21465,112.61067,15
+88,TPS 3 - Jln Dkh Gendong RW III Depan Sekolahan TK,Benowo,Romokalisari,-7.21764,112.62095,50
+89,TPS 1 - Jl.BANDAREJO I  (RT.01/RW01),Benowo,Sememi,-7.26592,112.64521,25
+90,TPS 2 - JL. SEMEMIJAYA SELATAN 2A,Benowo,Sememi,-7.25947,112.64664,50
+91,TPS 3 - SEMEMIJAYA VIII 9RT.01/RW.01),Benowo,Sememi,-7.25774,112.61751,30
+92,TPS 4 - SEMEMIJAYA IIA LAP. (RT.3/RW.1,Benowo,Sememi,-7.25842,112.63091,40
+93,TPS 5 - SEMEMIJAY V/29,Benowo,Sememi,-7.26869,112.61989,20
+94,TPS 6 - SEMEMIJAYA V UTARA REL,Benowo,Sememi,-7.26312,112.62694,10
+95,TPS 7 - SEMEMIJAYA VI LAP.(RT.06/RW.1),Benowo,Sememi,-7.27037,112.63302,20
+96,TPS 8 - SEMEMIJAYA IX B (TPA.DARUL NA'IM),Benowo,Sememi,-7.27422,112.62745,20
+97,TPS 9 - BALAI RT.05/RW.01,Benowo,Sememi,-7.26057,112.64459,10
+98,TPS 10 - SEMEMIJAYA VII C,Benowo,Sememi,-7.26297,112.64059,25
+99,TPS 11 - SEMEMIJAYA SEL. IC,Benowo,Sememi,-7.26012,112.62681,40
+100,TPS 12 - JL. UKA V (RW.2),Benowo,Sememi,-7.27218,112.61837,40
+101,TPS 13 - JL. UKA X (RW.2),Benowo,Sememi,-7.25705,112.6438,15
+102,TPS 14 - BALAI RT.05/RW.02 UKA XIII A,Benowo,Sememi,-7.26433,112.63293,40
+103,TPS 15 - GEDUNG PANCA BAKTI RW.02,Benowo,Sememi,-7.26747,112.64231,25
+104,TPS 16 - UKA II RT.07/RW.2,Benowo,Sememi,-7.26615,112.62155,20
+105,TPS 17 - UKA XX RT.011/RW02,Benowo,Sememi,-7.26318,112.62584,25
+106,TPS 18 - BALAI RT.01/RW.03 KENDUNG,Benowo,Sememi,-7.25944,112.63725,20
+107,TPS 19 - KENDUNG RT.02/RW.03,Benowo,Sememi,-7.27158,112.63718,40
+108,TPS 20 - KENDUNG RT.03/RW.03,Benowo,Sememi,-7.27016,112.63782,15
+109,TPS 21 - KENDUNG RT.06/RW.03,Benowo,Sememi,-7.26565,112.62512,30
+110,TPS 22 - LAPANGAN KENDUNG RW.03,Benowo,Sememi,-7.25756,112.63082,10
+111,TPS 23 - BALAI RW 04,Benowo,Sememi,-7.25792,112.64074,40
+112,TPS 24 - TPQ. H.A. ALI  RW.04,Benowo,Sememi,-7.27118,112.61913,25
+113,TPS 25 - SEMEMI  RT.03/RW.04,Benowo,Sememi,-7.26288,112.62013,30
+114,TPS 26 - BANDAREJO  RT.04/RW.05,Benowo,Sememi,-7.25841,112.64237,50
+115,TPS 27 - BANDAREJI III RT.05/RW.05,Benowo,Sememi,-7.2662,112.63491,25
+116,TPS 28 - BANDAREJO BALAI RT07/RW.05,Benowo,Sememi,-7.27286,112.64712,25
+117,TPS 29 - BANDAREJO BALAI RW.05,Benowo,Sememi,-7.27337,112.64465,30
+118,TPS 30 - KENDUNGJAYA VIII,Benowo,Sememi,-7.27208,112.61992,15
+119,TPS 31 - KENDUNGJAYA I RT.01/RW.06,Benowo,Sememi,-7.26807,112.6475,25
+120,TPS 32 - BALAI RT.03/RW.06,Benowo,Sememi,-7.26131,112.63442,25
+121,TPS 33 - GRIYA CITRA ASRI. LAP.RT.01/RW.07,Benowo,Sememi,-7.26368,112.64817,10
+122,TPS 34 - BLAI RW O7 G.C.A,Benowo,Sememi,-7.27061,112.62501,20
+123,TPS 35 - BALAI RT. 06/RW.07,Benowo,Sememi,-7.26115,112.62555,20
+124,TPS 36 - KENDUNG REJO I/1 9RT.01/RW.8,Benowo,Sememi,-7.26074,112.6319,50
+125,TPS 37 - KENDUNGREJO BALAI RT.05/RW.08,Benowo,Sememi,-7.27406,112.63462,10
+126,TPS 38 Sememi,Benowo,Sememi,-7.27355,112.64481,15
+127,TPS 39 - KENDUNGREJO MASJID BAITUL HUDA,Benowo,Sememi,-7.26808,112.63933,15
+128,TPS 40 - SEMEMI BARI I,Benowo,Sememi,-7.27164,112.61521,40
+129,TPS 1 - Tambak Oso Wilangon RT 01 RW I,Benowo,Tambakoso Wilangun,-7.20252,112.63399,25
+130,TPS 2 - Tambak Oso Wilangon RT 03 RW I,Benowo,Tambakoso Wilangun,-7.21245,112.6316,30
+131,TPS 3 - Tambak Oso Wilangon RT 02 RW II,Benowo,Tambakoso Wilangun,-7.20098,112.63348,15
+132,TPS 4 - Tambak Oso Wilangon RT 03 RW III,Benowo,Tambakoso Wilangun,-7.20369,112.62052,10
+133,TPS 5 - Tambak Oso Wil Timur RT 01 RW IV,Benowo,Tambakoso Wilangun,-7.19838,112.63011,50
+134,TPS 1 - Jl. Sulung tengah,Bubutan,Alun-Alun Contong,-7.24812,112.73634,20
+135,TPS 2 - Jl. Sulung Sekolahan,Bubutan,Alun-Alun Contong,-7.25082,112.73651,50
+136,TPS 3 - Jl. Tambak Bayan Tengah,Bubutan,Alun-Alun Contong,-7.25086,112.73645,30
+137,TPS 4 - Jl. Kepatihan gg. 3,Bubutan,Alun-Alun Contong,-7.25087,112.73685,25
+138,TPS 5 - Jl. Carikan gg. 4,Bubutan,Alun-Alun Contong,-7.25087,112.73414,10
+139,TPS 6 - Jl. Kawatan gg. 6,Bubutan,Alun-Alun Contong,-7.24617,112.73613,20
+140,TPS 7 - Jl. Alun-alun Contong no. 5,Bubutan,Alun-Alun Contong,-7.25442,112.73612,20
+141,TPS 8 - Jl. Praban Tengah,Bubutan,Alun-Alun Contong,-7.25475,112.73283,20
+142,TPS 9 - Jl. Praban wetan gg. 3,Bubutan,Alun-Alun Contong,-7.24967,112.73102,25
+143,TPS 10 - Jl. Genting Kali,Bubutan,Alun-Alun Contong,-7.25397,112.73535,50
+144,TPS 1 - Jl. Kranggan IV,Bubutan,Bubutan,-7.24197,112.72102,15
+145,TPS 2 - Jl. Kranggan V,Bubutan,Bubutan,-7.23561,112.7338,25
+146,TPS 3 - Jl. Kranggan VII,Bubutan,Bubutan,-7.23651,112.73054,40
+147,TPS 4 - Jl. Tembok Gede III RT.03,Bubutan,Bubutan,-7.24329,112.73025,25
+148,TPS 5 - Jl. Tembok Gede III RT.04,Bubutan,Bubutan,-7.2476,112.72663,20
+149,TPS 6 - Jl. Tembok Lor I (SD Bubutan),Bubutan,Bubutan,-7.23953,112.73397,50
+150,TPS 7 - Jl. Tembok Lor IV (Balai RW),Bubutan,Bubutan,-7.24598,112.72859,15
+151,TPS 8 - Jl. Tembok Lor III (Rmh Ketua RT.07),Bubutan,Bubutan,-7.24967,112.73161,10
+152,TPS 9 - Jl. Tembok Lor III Buntu (Lapangan),Bubutan,Bubutan,-7.24293,112.72941,10
+153,TPS 10 - Jl. Gambuhan (dpn Gereja),Bubutan,Bubutan,-7.24133,112.72988,15
+154,TPS 11 - Jl. Pengenal,Bubutan,Bubutan,-7.24649,112.73099,30
+155,TPS 12 - Jl. Pengenal,Bubutan,Bubutan,-7.24794,112.72709,10
+156,TPS 13 - Jl. Maspati Gg.I,Bubutan,Bubutan,-7.24006,112.7234,30
+157,TPS 14 - Jl. Maspati Gg.IV,Bubutan,Bubutan,-7.24098,112.72043,40
+158,TPS 15 - Jl. Maspati Gg. V,Bubutan,Bubutan,-7.23743,112.72157,30
+159,TPS 16 - Jl. Maspati Gg.VI,Bubutan,Bubutan,-7.24129,112.73183,50
+160,TPS 17 - Jl. Tembaan Gg.II,Bubutan,Bubutan,-7.24043,112.72171,30
+161,TPS 18 - Jl. Semarang 128 (lapangan),Bubutan,Bubutan,-7.24179,112.72182,25
+162,TPS 19 - Jl. Semarang 128 (lapangan),Bubutan,Bubutan,-7.24983,112.72378,25
+163,TPS 20 - Aspol Jl. Koblen,Bubutan,Bubutan,-7.24278,112.72108,25
+164,TPS 1 - JL. GUNDIH I,Bubutan,Gundih,-7.23706,112.72018,15
+165,TPS 2 - JL. GUNDIH LAPANGAN RT 02,Bubutan,Gundih,-7.23764,112.71466,25
+166,TPS 3 - JL. GUNDIH 2/7 LAPANGAN (TIMUR KALI),Bubutan,Gundih,-7.23889,112.7277,25
+167,TPS 4 - JL. GUNDIH 2 BARAT NO.60,Bubutan,Gundih,-7.23847,112.72448,50
+168,TPS 5 - JL. GUNDIH IV BARAT SUNGAI,Bubutan,Gundih,-7.23518,112.72227,10
+169,TPS 6 - JL. GUNDIH 3 TIMUR NO.25,Bubutan,Gundih,-7.23934,112.72458,40
+170,TPS 7 - JL. GUNDIH IV TIMUR NO.22,Bubutan,Gundih,-7.2473,112.71835,30
+171,TPS 8 - JL. MAGORUKUN REL NO. 11,Bubutan,Gundih,-7.24648,112.72335,25
+172,TPS 9 - JL. MARGORUKUN LEBAR NO. 63,Bubutan,Gundih,-7.23925,112.72046,10
+173,TPS 10 - JL. MARGORUKUN TENGAH NO. 10,Bubutan,Gundih,-7.2389,112.72787,50
+174,TPS 11 - JL. MARGORUKUN I/9,Bubutan,Gundih,-7.23619,112.71721,10
+175,TPS 12 - JJL. MARGORUKUN I/19,Bubutan,Gundih,-7.23659,112.71532,40
+176,TPS 13 - JL. LAMONGAN 50,Bubutan,Gundih,-7.24408,112.71681,15
+177,TPS 14 - JL.LAMONGAN BALAI RW,Bubutan,Gundih,-7.24281,112.7196,40
+178,TPS 15 - JL. DUPAK RUKO SEBELAH RS IBI,Bubutan,Gundih,-7.24725,112.72186,25
+179,TPS 16 - JL. DUPAK,Bubutan,Gundih,-7.24452,112.71861,40
+180,TPS 17 - LAPANGAN (RT.01),Bubutan,Gundih,-7.24751,112.71877,40
+181,TPS 18 - JL. BABADAN I (RT.03),Bubutan,Gundih,-7.23874,112.72162,10
+182,TPS 19 - JL. BABADAN I/48 (RT.06),Bubutan,Gundih,-7.2472,112.72786,15
+183,TPS 20 - BALAI RW.V (RT.07),Bubutan,Gundih,-7.2435,112.72289,20
+184,TPS 21 - JL. BABADAN IV (RT.10),Bubutan,Gundih,-7.24335,112.71742,25
+185,TPS 22 - JL. BABADAN VIII (RT.13),Bubutan,Gundih,-7.23628,112.71774,15
+186,TPS 23 - JL. DEMAK TIMUR 2/24,Bubutan,Gundih,-7.23659,112.72519,15
+187,TPS 24 - JL. DEMAK TIMUR 4,Bubutan,Gundih,-7.24632,112.72036,50
+188,TPS 25 - JL. DEMAK TIMUR 6,Bubutan,Gundih,-7.24322,112.71375,15
+189,TPS 26 - JL DEMAK TIMUR VIII/3A,Bubutan,Gundih,-7.23763,112.72154,40
+190,TPS 27 - JL DEMAK TIMUR X/8,Bubutan,Gundih,-7.2401,112.72346,20
+191,TPS 28 - JL. MARGODADI BALAI RT 01,Bubutan,Gundih,-7.23843,112.72235,25
+192,TPS 29 - JL MARGODADI BALAI RT 2,Bubutan,Gundih,-7.24303,112.726,40
+193,TPS 30 - JL. MARGODADI BALAI RT,Bubutan,Gundih,-7.24774,112.7245,15
+194,TPS 31 - JL. MARGODADI BALAI RT 07 /,Bubutan,Gundih,-7.24724,112.71319,15
+195,TPS 32 - JL. MARGODADI,Bubutan,Gundih,-7.2428,112.71422,30
+196,TPS 33 - JL. TEMBOK DUKUH 11/21,Bubutan,Gundih,-7.24649,112.72695,40
+197,TPS 34 - JL. TEMBOK DUKUH 9/8,Bubutan,Gundih,-7.24132,112.72491,30
+198,TPS 35 - JL. DEMAK TIMUR NO. 29,Bubutan,Gundih,-7.24368,112.72734,10
+199,TPS 36 - MARGORUKUN VII,Bubutan,Gundih,-7.23551,112.71321,20
+200,TPS 37 - MARGORUKUN IX,Bubutan,Gundih,-7.23511,112.71281,10
+201,TPS 38 Gundih ,Bubutan,Gundih,-7.23947,112.7225,50
+202,TPS 39 - MARGORUKUN XII,Bubutan,Gundih,-7.23742,112.72696,25
+203,TPS 40 - MARGORUKUN 3/18,Bubutan,Gundih,-7.24344,112.71362,10
+204,TPS 41 - MARGORUKUN 4 / 1,Bubutan,Gundih,-7.24696,112.71711,10
