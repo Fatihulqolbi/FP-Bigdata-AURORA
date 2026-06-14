@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Build output
+dist/
+dist-ssr/
+build/
+*.tsbuildinfo
+target/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Docker
+docker-volumes/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Prisma
+.prisma/
+
+# Test artifacts
+testsprite_tests/
+TestSprite/
+
+
+# OS
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Sensitive / keys (belt and suspenders)
+*-key.json
+*.pem
+credentials.json

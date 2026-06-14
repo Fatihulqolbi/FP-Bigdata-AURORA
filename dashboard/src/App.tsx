@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
+import { Toaster } from 'sonner';
+import { useAuth } from './contexts/AuthContext';
+import LoginPage from './pages/LoginPage';
+import SkeletonLoader from './features/marketplace/components/SkeletonLoader';
 import { 
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   AreaChart, Area, PieChart, Pie, Cell
 } from 'recharts';
 import { 
   LayoutDashboard, Truck, Recycle, Settings, Bell, 
-  TrendingUp, Server
+  TrendingUp, Server, Store, LogOut, Eye, EyeOff, MapPin
 } from 'lucide-react';
+import MarketplaceLayout from './features/marketplace/MarketplaceLayout';
+import SettingsPage from './pages/SettingsPage';
+import TpsManagement from './pages/TpsManagement';
 import { MapContainer, TileLayer, Marker, Popup, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -290,7 +297,17 @@ const PredictionTable = ({ data }: { data: any[] }) => (
 );
 
 function App() {
+  // AURORA-INTEGRATION (Tahap 1 / Marketplace): global auth + login routing
+  const { user, loading: authLoading, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [demoMode, setDemoMode] = useState(false);
+
+  // Redirect non-admin to marketplace tab
+  useEffect(() => {
+    if (user && user.role !== 'ADMIN' && activeTab === 'dashboard') {
+      setActiveTab('marketplace');
+    }
+  }, [user]);
   const [liveTonnage, setLiveTonnage] = useState(1792); // Base on Surabaya data
   const [showCompactor, setShowCompactor] = useState(true);
   const [showDumpTruck, setShowDumpTruck] = useState(true);
@@ -603,11 +620,29 @@ function App() {
 
   return (
     <>
+      <Toaster position="top-right" theme="dark" richColors />
       <div className="animated-bg">
         <div className="blob blob-1"></div>
         <div className="blob blob-2"></div>
       </div>
       
+      {/* AURORA-INTEGRATION (Tahap 1 / Marketplace): login page */}
+      {authLoading ? (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "16px", color: "var(--text-secondary)" }}>
+          <div style={{ fontSize: "18px" }}>Memuat AURORA...</div>
+          <SkeletonLoader width="200px" height="6px" borderRadius="3px" />
+        </div>
+      ) : !user ? (
+        <LoginPage
+          onLoginSuccess={(role) => {
+            if (role === "ADMIN") {
+              setActiveTab("dashboard");
+            } else {
+              setActiveTab("marketplace");
+            }
+          }}
+        />
+      ) : (
       <div className="dashboard-layout">
         {/* Sidebar */}
         <aside className="sidebar glass-panel">
@@ -622,8 +657,14 @@ function App() {
               { id: 'logistics', icon: Truck, label: 'Armada & Rute' },
               { id: 'sorting', icon: Recycle, label: 'Sorting Hub' },
               { id: 'pipeline', icon: Server, label: 'Data Pipeline' },
+              { id: 'tps', icon: MapPin, label: 'Manajemen TPS' },
+              { id: 'marketplace', icon: Store, label: 'Marketplace' },
               { id: 'settings', icon: Settings, label: 'Pengaturan' },
-            ].map(item => (
+            ].filter(item => {
+              if (item.id === 'tps') return (user?.role === 'ADMIN' || user?.role === 'ADMIN_TPS' || user?.permissions?.includes('MANAGE_TPS'));
+              if (user?.role === 'ADMIN') return true;
+              return item.id === 'marketplace' || item.id === 'settings';
+            }).map(item => (
               <a 
                 key={item.id}
                 className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
@@ -648,8 +689,44 @@ function App() {
                 <div className="pulse"></div>
                 Pipeline Aktif (Spark & Kafka)
               </div>
+              {/* AURORA-INTEGRATION (Tahap 1 / Marketplace): user info + logout */}
+              {user && (
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)', padding: '0 8px' }}>
+                  {user.name}
+                </span>
+              )}
+              {user?.role === 'ADMIN' && activeTab === 'marketplace' && (
+                <button
+                  onClick={() => setDemoMode(!demoMode)}
+                  title={demoMode ? "Demo Buyer aktif" : "Aktifkan Demo Buyer"}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '8px',
+                    cursor: 'pointer',
+                    border: '1px solid var(--glass-border)',
+                    background: demoMode ? 'rgba(34,197,94,0.2)' : 'transparent',
+                    color: demoMode ? 'var(--accent-green)' : 'var(--text-secondary)',
+                    fontSize: '12px',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  {demoMode ? <Eye size={14} /> : <EyeOff size={14} />}
+                  {demoMode ? 'Demo ON' : 'Demo'}
+                </button>
+              )}
               <button className="glass-panel" style={{ padding: '10px', borderRadius: '50%', cursor: 'pointer', border: 'none', color: 'var(--text-primary)' }}>
                 <Bell size={20} />
+              </button>
+              <button
+                className="glass-panel"
+                onClick={logout}
+                title="Keluar"
+                style={{ padding: '10px', borderRadius: '50%', cursor: 'pointer', border: 'none', color: 'var(--text-secondary)' }}
+              >
+                <LogOut size={18} />
               </button>
             </div>
           </header>
@@ -1105,8 +1182,37 @@ function App() {
             </div>
           </div>
         )}
+        {/* AURORA-INTEGRATION (Tahap 1 / Marketplace): marketplace tab */}
+        {activeTab === 'marketplace' && (
+          <MarketplaceLayout demoMode={demoMode} />
+        )}
+        {activeTab === 'sorting' && (
+          <div style={{ animation: "fadeIn 0.5s ease-in-out" }}>
+            <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
+              <Recycle size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
+              <h3 style={{ fontSize: "18px", color: "var(--text-primary)", marginBottom: "8px" }}>Sorting Hub</h3>
+              <p style={{ fontSize: "13px" }}>Panel monitoring pusat pemilahan sampah akan tersedia di tahap selanjutnya.</p>
+            </div>
+          </div>
+        )}
+        {activeTab === 'pipeline' && (
+          <div style={{ animation: "fadeIn 0.5s ease-in-out" }}>
+            <div className="glass-panel" style={{ padding: "40px", textAlign: "center", color: "var(--text-secondary)" }}>
+              <Server size={48} style={{ opacity: 0.3, marginBottom: "12px" }} />
+              <h3 style={{ fontSize: "18px", color: "var(--text-primary)", marginBottom: "8px" }}>Data Pipeline</h3>
+              <p style={{ fontSize: "13px" }}>Monitoring Kafka & Spark Streaming akan tersedia di tahap selanjutnya.</p>
+            </div>
+          </div>
+        )}
+        {activeTab === 'settings' && (
+          <SettingsPage />
+        )}
+        {activeTab === 'tps' && (
+          <TpsManagement />
+        )}
         </main>
       </div>
+      )}
     </>
   );
 }

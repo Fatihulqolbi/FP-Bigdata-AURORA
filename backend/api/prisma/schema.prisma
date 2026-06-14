@@ -1,0 +1,306 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "mongodb"
+  url          = env("DATABASE_URL")
+  relationMode = "prisma"
+}
+
+enum Role {
+  ADMIN
+  ADMIN_TPS
+  BANK_SAMPAH
+  INDUSTRI
+  WARGA
+  UMKM
+}
+
+enum AdminLevel {
+  SUPER_ADMIN
+  ADMIN_VERIFICATION
+  ADMIN_OPERATIONAL
+  ADMIN_REGIONAL
+}
+
+enum AccountStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  REJECTED
+}
+
+enum ListingType {
+  MATERIAL
+  PRODUCT
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD_OUT
+  EXPIRED
+  DRAFT
+}
+
+enum DemandStatus {
+  OPEN
+  PARTIALLY_FULFILLED
+  FULFILLED
+  CANCELLED
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  AWAITING_PAYMENT
+  PAID
+  READY_FOR_PICKUP
+  READY_FOR_DELIVERY
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  DISPUTE
+  RESOLVED
+}
+
+enum DisputeStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED_BUYER
+  RESOLVED_SELLER
+  CLOSED
+}
+
+enum FulfillmentOption {
+  PICKUP
+  DELIVERY
+  BOTH
+}
+
+enum LogisticsOption {
+  PICKUP
+  DELIVERY
+}
+
+model User {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  email         String        @unique
+  passwordHash  String
+  role          Role
+  adminLevel    AdminLevel?     // only for ADMIN role
+  status        AccountStatus @default(PENDING_VERIFICATION)
+  verifiedBy    String?       @db.ObjectId
+  name          String
+  address       String?
+  kecamatan     String?
+  lat           Float?
+  lng           Float?
+  contact       String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  // Regional admin scope
+  assignedKecamatans String[]   @default([])
+
+  // Seller profile
+  verificationDoc String?
+  sellerRating    Float        @default(0)
+
+  // Industry profile
+  industryDoc   String?
+
+  // Forgot password
+  resetToken        String?
+  resetTokenExpires DateTime?
+
+  // Documents upload (bypass for now, form available)
+  uploadedDocuments String[]  @default([])
+
+  listings      Listing[]     @relation("SellerListings")
+  demands       Demand[]      @relation("BuyerDemands")
+  orders        Order[]       @relation("BuyerOrders")
+  reviews       Review[]      @relation("UserReviews")
+
+  @@map("users")
+}
+
+model MaterialCategory {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String   @unique
+  description String?
+  unit        String   @default("kg")
+  minPrice    Float
+  maxPrice    Float
+  gradeOptions String[] @default([])
+  isProduct   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  listings    Listing[] @relation("CategoryListings")
+  demands     Demand[]  @relation("CategoryDemands")
+
+  @@map("material_categories")
+}
+
+model Listing {
+  id                 String            @id @default(auto()) @map("_id") @db.ObjectId
+  sellerId           String            @db.ObjectId
+  seller             User              @relation("SellerListings", fields: [sellerId], references: [id])
+  type               ListingType       @default(MATERIAL)
+  categoryId         String            @db.ObjectId
+  category           MaterialCategory  @relation("CategoryListings", fields: [categoryId], references: [id])
+  title              String
+  description        String?
+  quantity           Float
+  pricePerKg         Float
+  moq                Float             @default(1)
+  fulfillmentOptions FulfillmentOption @default(BOTH)
+  lat                Float
+  lng                Float
+  status             ListingStatus     @default(ACTIVE)
+  grade              String?
+  expiresAt          DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  orderItems         OrderItem[]       @relation("ListingOrderItems")
+
+  @@map("listings")
+}
+
+model Demand {
+  id                String            @id @default(auto()) @map("_id") @db.ObjectId
+  buyerId           String            @db.ObjectId
+  buyer             User              @relation("BuyerDemands", fields: [buyerId], references: [id])
+  categoryId        String            @db.ObjectId
+  category          MaterialCategory  @relation("CategoryDemands", fields: [categoryId], references: [id])
+  quantityNeeded    Float
+  maxPrice          Float
+  preferredDistance Float            @default(50)
+  lat               Float?
+  lng               Float?
+  status            DemandStatus      @default(OPEN)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  matchSuggestions  MatchSuggestion[] @relation("DemandMatches")
+  orders            Order[]           @relation("DemandOrders")
+
+  @@map("demands")
+}
+
+model MatchSuggestion {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  demandId        String   @db.ObjectId
+  demand          Demand   @relation("DemandMatches", fields: [demandId], references: [id])
+  candidateData   Json
+  totalQuantity   Float
+  totalCost       Float
+  distanceKm      Float
+  score           Float
+  status          String   @default("SUGGESTED")
+  createdAt       DateTime @default(now())
+
+  @@map("match_suggestions")
+}
+
+model Order {
+  id              String          @id @default(auto()) @map("_id") @db.ObjectId
+  buyerId         String          @db.ObjectId
+  buyer           User            @relation("BuyerOrders", fields: [buyerId], references: [id])
+  demandId        String?         @db.ObjectId
+  demand          Demand?         @relation("DemandOrders", fields: [demandId], references: [id])
+  items           OrderItem[]
+  status          OrderStatus     @default(DRAFT)
+  logisticsOption LogisticsOption?
+  totalQuantity   Float           @default(0)
+  totalAmount     Float           @default(0)
+  notes           String?
+  paymentProof    String?
+  dispute         Dispute?        @relation("OrderDispute")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  orderId     String        @db.ObjectId
+  order       Order         @relation(fields: [orderId], references: [id])
+  listingId   String        @db.ObjectId
+  listing     Listing       @relation("ListingOrderItems", fields: [listingId], references: [id])
+  sellerId    String        @db.ObjectId
+  quantity    Float
+  pricePerKg  Float
+  subtotal    Float
+  status      OrderStatus   @default(PENDING_APPROVAL)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("order_items")
+}
+
+model Dispute {
+  id          String        @id @default(auto()) @map("_id") @db.ObjectId
+  orderId     String        @db.ObjectId @unique
+  order       Order         @relation("OrderDispute", fields: [orderId], references: [id])
+  filedBy     String        @db.ObjectId
+  reason      String
+  description String?
+  evidence    String[]      @default([])
+  status      DisputeStatus @default(OPEN)
+  resolution  String?
+  resolvedBy  String?       @db.ObjectId
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("disputes")
+}
+
+model Review {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  orderId     String   @db.ObjectId
+  reviewerId  String   @db.ObjectId
+  reviewer    User     @relation("UserReviews", fields: [reviewerId], references: [id])
+  targetId    String   @db.ObjectId
+  rating      Float
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  @@map("reviews")
+}
+
+model AuditLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String?  @db.ObjectId
+  action      String
+  entity      String
+  entityId    String?
+  detail      Json?
+  createdAt   DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+model Tps {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  code          String   @unique
+  name          String
+  kecamatan     String
+  kelurahan     String?
+  lat           Float
+  lng           Float
+  capacity      Float    @default(50)
+  currentVolume Float    @default(0)
+  status        String   @default("AKTIF")
+  images        String[] @default([])
+  adminId       String?  @db.ObjectId
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("tps")
+}
