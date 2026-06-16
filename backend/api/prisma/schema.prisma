@@ -15,6 +15,7 @@ enum Role {
   INDUSTRI
   WARGA
   UMKM
+  DRIVER
 }
 
 enum AdminLevel {
@@ -287,20 +288,73 @@ model AuditLog {
 }
 
 model Tps {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  code           String   @unique
+  name           String
+  kecamatan      String
+  kelurahan      String?
+  lat            Float
+  lng            Float
+  capacityKg     Float    @default(0)
+  fillThreshold  Float    @default(0.9)
+  currentVolume  Float    @default(0)
+  status         String   @default("AKTIF")
+  type           String   @default("TPS_BIASA") // TPS_BIASA | COMPACTOR
+  schedule       Json     @default("[]")
+  needsReview    Boolean  @default(true)
+  verifiedBy     String?  @db.ObjectId
+  verifiedAt     DateTime?
+  source         String   @default("PDF")
+  rawAddress     String?
+  confidence     Float    @default(0)
+  images         String[] @default([])
+  adminId        String?  @db.ObjectId
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("tps")
+}
+
+model Truck {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  code            String   @unique
+  name            String
+  type            String   // COMPACTOR | DUMP_TRUCK | ARM_ROLL
+  capacityKg      Float
+  currentLoadKg   Float    @default(0)
+  status          String   @default("AVAILABLE") // AVAILABLE | EN_ROUTE_TO_TPS | LOADING | EN_ROUTE_TO_HUB | UNLOADING
+  lat             Float?
+  lng             Float?
+  heading         Float?   // degrees, for map rotation
+  driverId        String?  @db.ObjectId
+  assignedTpsId   String?  @db.ObjectId
+  destinationLat  Float?
+  destinationLng  Float?
+  facilityId      String?  @db.ObjectId
+  route           Json?
+  routeProgress   Float    @default(0)
+  routeDistance   Float?   // meters
+  routeDuration   Float?   // seconds
+  routeWaypoints Json?    // [{tpsId, tpsName, tpsLat, tpsLng, collectedKg}]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("trucks")
+}
+
+model SortingHub {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   code          String   @unique
   name          String
-  kecamatan     String
-  kelurahan     String?
+  type          String   // PLTSa | TPS3R | TRANSFER_STATION | COMPOSTING | RECYCLING | SMELTER | PAPER_MILL
+  kecamatan     String?
   lat           Float
   lng           Float
-  capacity      Float    @default(50)
-  currentVolume Float    @default(0)
-  status        String   @default("AKTIF")
-  images        String[] @default([])
-  adminId       String?  @db.ObjectId
+  capacityKg    Float
+  currentLoadKg Float    @default(0)
+  acceptsTypes  String[] @default([])
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  @@map("tps")
+  @@map("sorting_hubs")
 }

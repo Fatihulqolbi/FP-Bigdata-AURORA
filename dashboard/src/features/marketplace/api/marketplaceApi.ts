@@ -147,7 +147,37 @@ export const tps = {
   update: (id: string, data: any) => request<any>(`/tps/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   updateVolume: (id: string, currentVolume: number) =>
     request<any>(`/tps/${id}/volume`, { method: "PATCH", body: JSON.stringify({ currentVolume }) }),
+  verify: (id: string, data: any) =>
+    request<any>(`/tps/${id}/verify`, { method: "PATCH", body: JSON.stringify(data) }),
   delete: (id: string) => request<any>(`/tps/${id}`, { method: "DELETE" }),
+};
+
+// AURORA-INTEGRATION (Tahap 2 / Big Data): analytics endpoints
+export const analytics = {
+  tpsSummary: () => request<any>("/analytics/tps-summary"),
+  criticalTps: () => request<any>("/analytics/critical-tps"),
+  wasteTypes: () => request<any>("/analytics/waste-types"),
+};
+
+// AURORA-INTEGRATION (Tahap 4 / Fleet): driver dashboard
+export const driver = {
+  getRoute: (truckId: string) => request<any>(`/fleet/driver/${truckId}`),
+  getMe: () => request<any>("/fleet/driver/me"),
+  getAssignment: () => request<any>("/fleet/driver/assignment"),
+  startRoute: () => request<any>("/fleet/driver/start", { method: "POST" }),
+  arriveAtTps: () => request<any>("/fleet/driver/arrive", { method: "POST" }),
+  startLoading: () => request<any>("/fleet/driver/loading", { method: "POST" }),
+  completeLoading: () => request<any>("/fleet/driver/complete", { method: "POST" }),
+  arriveAtHub: () => request<any>("/fleet/driver/arrive-hub", { method: "POST" }),
+  unloadAtHub: () => request<any>("/fleet/driver/unload", { method: "POST" }),
+};
+
+// AURORA-INTEGRATION (Tahap 4 / Pipeline): data pipeline monitoring
+export const pipeline = {
+  getStatus: () => request<any>("/pipeline/status"),
+  getStats: () => request<any>("/pipeline/stats"),
+  getEvents: (limit?: number) => request<any>(`/pipeline/events${limit ? `?limit=${limit}` : ""}`),
+  getHDFSFiles: (path?: string) => request<any>(`/pipeline/hdfs${path ? `?path=${encodeURIComponent(path)}` : ""}`),
 };
 
 export default {
@@ -159,4 +189,6 @@ export default {
   orders,
   admin,
   tps,
+  analytics,
+  driver,
 };

@@ -16,6 +16,13 @@ router.post("/reset-password", authLimiter, authCtrl.resetPassword);
 router.get("/admin/verifications", requireAuth, requireRole("ADMIN"), authCtrl.getPendingVerifications);
 router.patch("/admin/verifications/:userId", requireAuth, requireRole("ADMIN"), authCtrl.verifyUser);
 
+// Admin user management
+router.get("/admin/users", requireAuth, requireRole("ADMIN"), authCtrl.listUsers);
+router.get("/admin/users/stats", requireAuth, requireRole("ADMIN"), authCtrl.getUserStats);
+router.post("/admin/users", requireAuth, requireRole("ADMIN"), authCtrl.adminCreateUser);
+router.patch("/admin/users/:userId", requireAuth, requireRole("ADMIN"), authCtrl.adminUpdateUser);
+router.delete("/admin/users/:userId", requireAuth, requireRole("ADMIN"), authCtrl.adminDeleteUser);
+
 router.patch("/profile", requireAuth, authCtrl.updateProfile);
 router.patch("/password", requireAuth, authCtrl.changePassword);
 router.delete("/account", requireAuth, authCtrl.deleteAccount);

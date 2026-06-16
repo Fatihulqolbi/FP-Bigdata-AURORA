@@ -152,20 +152,6 @@ async function main() {
   });
   console.log("Admin TPS created:", tpsAdmin.email);
 
-  // TPS data (sample from main locations)
-  await prisma.tps.createMany({
-    data: [
-      { code: "TPS-BEN-001", name: "TPS Benowo 1", kecamatan: "Benowo", kelurahan: "Kandangan", lat: -7.2478, lng: 112.64, capacity: 50, currentVolume: 28 },
-      { code: "TPS-BEN-002", name: "TPS Benowo 2 (Sememi)", kecamatan: "Benowo", kelurahan: "Sememi", lat: -7.2595, lng: 112.6466, capacity: 50, currentVolume: 12 },
-      { code: "TPS-BRA-001", name: "TPS Bratang", kecamatan: "Wonokromo", kelurahan: "Ngagelrejo", lat: -7.295, lng: 112.765, capacity: 40, currentVolume: 35 },
-      { code: "TPS-KEP-001", name: "TPS Keputih", kecamatan: "Sukolilo", kelurahan: "Keputih", lat: -7.282, lng: 112.795, capacity: 40, currentVolume: 8 },
-      { code: "TPS-WON-001", name: "TPS Wonorejo", kecamatan: "Rungkut", kelurahan: "Wonorejo", lat: -7.315, lng: 112.795, capacity: 35, currentVolume: 15 },
-      { code: "TPS-ASM-001", name: "TPS Asemrowo", kecamatan: "Asemrowo", kelurahan: "Asemrowo", lat: -7.2494, lng: 112.6954, capacity: 50, currentVolume: 44 },
-      { code: "TPS-BUB-001", name: "TPS Bubutan", kecamatan: "Bubutan", kelurahan: "Alun-Alun Contong", lat: -7.2481, lng: 112.7363, capacity: 20, currentVolume: 10 },
-    ],
-  });
-  console.log("TPS data created: 7");
-
   // Listings
   await prisma.listing.createMany({
     data: [

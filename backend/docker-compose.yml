@@ -1,9 +1,9 @@
-version: '3.8'
-
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.3.0
+    image: confluentinc/cp-zookeeper:6.2.0
     container_name: zookeeper
+    networks:
+      - bigdata-net
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -11,8 +11,10 @@ services:
       - "2181:2181"
 
   kafka:
-    image: confluentinc/cp-kafka:7.3.0
+    image: confluentinc/cp-kafka:6.2.0
     container_name: kafka
+    networks:
+      - bigdata-net
     depends_on:
       - zookeeper
     ports:
@@ -24,16 +26,17 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
 
   spark-master:
     image: apache/spark-py:v3.4.0
     container_name: spark-master
+    networks:
+      - bigdata-net
+    user: root
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
+      - SPARK_NO_DAEMONIZE=true
     ports:
       - "8080:8080"
       - "7077:7077"
@@ -41,17 +44,24 @@ services:
   spark-worker:
     image: apache/spark-py:v3.4.0
     container_name: spark-worker
+    networks:
+      - bigdata-net
+    user: root
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_WORKER_CORES=2
+      - SPARK_NO_DAEMONIZE=true
     depends_on:
       - spark-master
 
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: namenode
+    networks:
+      - bigdata-net
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     volumes:
       - hadoop_namenode:/hadoop/dfs/name
     environment:
@@ -64,12 +74,22 @@ services:
   datanode:
     image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
     container_name: datanode
+    networks:
+      - bigdata-net
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     depends_on:
       - namenode
     volumes:
       - hadoop_datanode:/hadoop/dfs/data
     env_file:
       - ./hadoop.env
+
+networks:
+  bigdata-net:
+    driver: bridge
 
 volumes:
   hadoop_namenode:

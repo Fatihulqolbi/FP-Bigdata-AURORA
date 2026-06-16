@@ -272,3 +272,126 @@ export async function deleteAccount(userId: string) {
   await prisma.user.update({ where: { id: userId }, data: { status: "SUSPENDED" } });
   return true;
 }
+
+// --- Admin User Management ---
+
+export async function listUsers(params: {
+  page: number;
+  limit: number;
+  role?: string;
+  status?: string;
+  search?: string;
+}) {
+  const { page, limit, role, status, search } = params;
+  const skip = (page - 1) * limit;
+
+  const where: any = {};
+  if (role) where.role = role;
+  if (status) where.status = status;
+  if (search) {
+    where.OR = [
+      { name: { contains: search, mode: "insensitive" } },
+      { email: { contains: search, mode: "insensitive" } },
+    ];
+  }
+
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true, email: true, name: true, role: true, status: true,
+        address: true, kecamatan: true, contact: true,
+        createdAt: true, updatedAt: true,
+      },
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  return {
+    users,
+    total,
+    page,
+    limit,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+export async function getUserStats() {
+  const [total, byRole, byStatus] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.groupBy({ by: ["role"], _count: { id: true } }),
+    prisma.user.groupBy({ by: ["status"], _count: { id: true } }),
+  ]);
+
+  return {
+    total,
+    byRole: byRole.map((r) => ({ role: r.role, count: r._count.id })),
+    byStatus: byStatus.map((s) => ({ status: s.status, count: s._count.id })),
+  };
+}
+
+export async function adminUpdateUser(userId: string, data: { name?: string; email?: string; role?: string; status?: string }) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+
+  const updateData: any = {};
+  if (data.name) updateData.name = data.name;
+  if (data.email) updateData.email = data.email;
+  if (data.role) updateData.role = data.role as Role;
+  if (data.status) updateData.status = data.status as AccountStatus;
+
+  return prisma.user.update({
+    where: { id: userId },
+    data: updateData,
+    select: {
+      id: true, email: true, name: true, role: true, status: true,
+      address: true, kecamatan: true, contact: true,
+      createdAt: true, updatedAt: true,
+    },
+  });
+}
+
+export async function adminDeleteUser(userId: string) {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("User not found");
+
+  await prisma.user.update({ where: { id: userId }, data: { status: "SUSPENDED" } });
+  return true;
+}
+
+export async function adminCreateUser(input: {
+  name: string;
+  email: string;
+  password: string;
+  role: Role;
+  status?: AccountStatus;
+  address?: string;
+  contact?: string;
+}) {
+  const existing = await prisma.user.findUnique({ where: { email: input.email } });
+  if (existing) throw new Error("Email already registered");
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+
+  const user = await prisma.user.create({
+    data: {
+      name: input.name,
+      email: input.email,
+      passwordHash,
+      role: input.role,
+      status: input.status || "ACTIVE",
+      address: input.address,
+      contact: input.contact,
+    },
+    select: {
+      id: true, email: true, name: true, role: true, status: true,
+      address: true, kecamatan: true, contact: true,
+      createdAt: true, updatedAt: true,
+    },
+  });
+
+  return user;
+}

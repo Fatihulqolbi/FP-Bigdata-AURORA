@@ -7,9 +7,16 @@ interface CreateTpsInput {
   kelurahan?: string;
   lat: number;
   lng: number;
-  capacity?: number;
+  capacityKg?: number;
+  fillThreshold?: number;
   currentVolume?: number;
   status?: string;
+  type?: string;
+  schedule?: any[];
+  needsReview?: boolean;
+  source?: string;
+  rawAddress?: string;
+  confidence?: number;
   images?: string[];
   adminId?: string;
 }
@@ -21,10 +28,25 @@ interface UpdateTpsInput {
   kelurahan?: string;
   lat?: number;
   lng?: number;
-  capacity?: number;
+  capacityKg?: number;
+  fillThreshold?: number;
   currentVolume?: number;
   status?: string;
+  type?: string;
+  schedule?: any[];
+  needsReview?: boolean;
+  source?: string;
+  rawAddress?: string;
+  confidence?: number;
   images?: string[];
+}
+
+interface VerifyTpsInput {
+  status?: string;
+  lat?: number;
+  lng?: number;
+  capacityKg?: number;
+  verifiedBy: string;
 }
 
 export async function createTps(data: CreateTpsInput) {
@@ -39,18 +61,27 @@ export async function createTps(data: CreateTpsInput) {
       kelurahan: data.kelurahan,
       lat: data.lat,
       lng: data.lng,
-      capacity: data.capacity ?? 50,
+      capacityKg: data.capacityKg ?? 3500,
+      fillThreshold: data.fillThreshold ?? 0.9,
       currentVolume: data.currentVolume ?? 0,
       status: data.status ?? "AKTIF",
+      type: data.type ?? "TPS_BIASA",
+      schedule: data.schedule ?? [],
+      needsReview: data.needsReview ?? true,
+      source: data.source ?? "MANUAL",
+      rawAddress: data.rawAddress,
+      confidence: data.confidence ?? 1.0,
       images: data.images ?? [],
       adminId: data.adminId,
     },
   });
 }
 
-export async function getTpsList(page = 1, limit = 50, kecamatan?: string) {
+export async function getTpsList(page = 1, limit = 50, kecamatan?: string, status?: string, needsReview?: boolean) {
   const where: any = {};
   if (kecamatan) where.kecamatan = kecamatan;
+  if (status) where.status = status;
+  if (typeof needsReview === "boolean") where.needsReview = needsReview;
 
   const [list, total] = await Promise.all([
     prisma.tps.findMany({
@@ -81,13 +112,38 @@ export async function updateTps(id: string, data: UpdateTpsInput) {
   return prisma.tps.update({ where: { id }, data });
 }
 
+export async function verifyTps(id: string, data: VerifyTpsInput) {
+  const existing = await prisma.tps.findUnique({ where: { id } });
+  if (!existing) throw new Error("TPS not found");
+
+  const updateData: any = {
+    needsReview: false,
+    verifiedBy: data.verifiedBy,
+    verifiedAt: new Date(),
+  };
+
+  if (data.status) updateData.status = data.status;
+  if (typeof data.lat === "number") updateData.lat = data.lat;
+  if (typeof data.lng === "number") updateData.lng = data.lng;
+  if (typeof data.capacityKg === "number") updateData.capacityKg = data.capacityKg;
+
+  return prisma.tps.update({ where: { id }, data: updateData });
+}
+
 export async function updateVolume(id: string, currentVolume: number) {
   const existing = await prisma.tps.findUnique({ where: { id } });
   if (!existing) throw new Error("TPS not found");
   if (currentVolume < 0) throw new Error("Volume cannot be negative");
-  if (currentVolume > existing.capacity) throw new Error("Volume exceeds capacity");
 
-  return prisma.tps.update({ where: { id }, data: { currentVolume } });
+  const fillLevel = existing.capacityKg > 0 ? currentVolume / existing.capacityKg : 0;
+  let status = existing.status;
+  if (existing.status !== "NONAKTIF") {
+    if (fillLevel >= 0.9) status = "PENUH";
+    else if (fillLevel >= 0.7) status = "WASPADA";
+    else status = "AKTIF";
+  }
+
+  return prisma.tps.update({ where: { id }, data: { currentVolume, status } });
 }
 
 export async function deleteTps(id: string) {

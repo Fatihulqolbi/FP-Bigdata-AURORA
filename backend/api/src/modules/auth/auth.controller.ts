@@ -180,3 +180,95 @@ export async function deleteAccount(req: AuthRequest, res: Response) {
     res.status(500).json({ error: "Internal server error" });
   }
 }
+
+// --- Admin User Management ---
+
+export async function listUsers(req: AuthRequest, res: Response) {
+  try {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 50;
+    const role = req.query.role as string | undefined;
+    const status = req.query.status as string | undefined;
+    const search = req.query.search as string | undefined;
+
+    const result = await authService.listUsers({ page, limit, role, status, search });
+    res.json(result);
+  } catch {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+const adminCreateSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(6),
+  role: z.enum(["ADMIN", "ADMIN_TPS", "BANK_SAMPAH", "INDUSTRI", "WARGA", "UMKM", "DRIVER"]),
+  status: z.enum(["PENDING_VERIFICATION", "ACTIVE", "SUSPENDED", "REJECTED"]).optional().default("ACTIVE"),
+  address: z.string().optional(),
+  contact: z.string().optional(),
+});
+
+export async function adminCreateUser(req: AuthRequest, res: Response) {
+  try {
+    const data = adminCreateSchema.parse(req.body);
+    const user = await authService.adminCreateUser(data);
+    res.status(201).json(user);
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: "Validation error", details: err.errors });
+      return;
+    }
+    if (err.message === "Email already registered") {
+      res.status(409).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function getUserStats(req: AuthRequest, res: Response) {
+  try {
+    const stats = await authService.getUserStats();
+    res.json(stats);
+  } catch {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+const adminUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(["ADMIN", "ADMIN_TPS", "BANK_SAMPAH", "INDUSTRI", "WARGA", "UMKM", "DRIVER"]).optional(),
+  status: z.enum(["PENDING_VERIFICATION", "ACTIVE", "SUSPENDED", "REJECTED"]).optional(),
+});
+
+export async function adminUpdateUser(req: AuthRequest, res: Response) {
+  try {
+    const data = adminUpdateSchema.parse(req.body);
+    const user = await authService.adminUpdateUser(req.params.userId as string, data);
+    res.json(user);
+  } catch (err: any) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: "Validation error", details: err.errors });
+      return;
+    }
+    if (err.message === "User not found") {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+export async function adminDeleteUser(req: AuthRequest, res: Response) {
+  try {
+    await authService.adminDeleteUser(req.params.userId as string);
+    res.json({ message: "User suspended." });
+  } catch (err: any) {
+    if (err.message === "User not found") {
+      res.status(404).json({ error: err.message });
+      return;
+    }
+    res.status(500).json({ error: "Internal server error" });
+  }
+}

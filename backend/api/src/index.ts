@@ -8,7 +8,11 @@ import matchingRoutes from "./modules/marketplace/matching.routes.js";
 import orderRoutes from "./modules/marketplace/order.routes.js";
 import materialRoutes from "./modules/marketplace/material.routes.js";
 import tpsRoutes from "./modules/marketplace/tps.routes.js";
+import analyticsRoutes from "./modules/analytics/analytics.routes.js";
+import fleetRoutes from "./modules/fleet/fleet.routes.js";
+import pipelineRoutes from "./modules/pipeline/pipeline.routes.js";
 import { startTpsSimulation } from "./modules/marketplace/tps.simulation.js";
+import { startTruckSimulation, stopTruckSimulation } from "./modules/fleet/truck.simulation.js";
 import { generalLimiter } from "./middleware/rateLimit.js";
 import { logger } from "./utils/logger.js";
 
@@ -34,9 +38,16 @@ app.use("/api/demands", demandRoutes);
 app.use("/api/matches", matchingRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/tps", tpsRoutes);
+// AURORA-INTEGRATION (Tahap 2 / Big Data): analytics endpoints
+app.use("/api/analytics", analyticsRoutes);
+// AURORA-INTEGRATION (Tahap 4 / Fleet): fleet & routing
+app.use("/api/fleet", fleetRoutes);
+// AURORA-INTEGRATION (Tahap 4 / Pipeline): data pipeline monitoring
+app.use("/api/pipeline", pipelineRoutes);
 
-// Start background TPS volume simulation
+// Start background simulations
 startTpsSimulation();
+startTruckSimulation();
 
 app.listen(PORT, () => {
   logger.info(`AURORA API running on http://localhost:${PORT}`);
@@ -47,6 +58,9 @@ app.listen(PORT, () => {
   logger.info("  /api/demands     - Buyer demands");
   logger.info("  /api/matches     - Matching engine");
   logger.info("  /api/orders      - Order management");
+  logger.info("  /api/tps          - TPS management");
+  logger.info("  /api/analytics    - Big Data analytics");
+  logger.info("  /api/fleet        - Fleet & real-time routing");
 });
 
 export default app;

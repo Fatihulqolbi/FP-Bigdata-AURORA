@@ -9,6 +9,7 @@ router.post("/", requireAuth, requirePermission(Permission.MANAGE_TPS), tpsCtrl.
 router.get("/", requireAuth, tpsCtrl.list);
 router.get("/:id", requireAuth, tpsCtrl.getById);
 router.patch("/:id", requireAuth, requirePermission(Permission.MANAGE_TPS), tpsCtrl.update);
+router.patch("/:id/verify", requireAuth, tpsCtrl.verify);
 router.patch("/:id/volume", requireAuth, requirePermission(Permission.MANAGE_TPS), tpsCtrl.updateVolume);
 router.delete("/:id", requireAuth, requirePermission(Permission.MANAGE_TPS), tpsCtrl.remove);
 

@@ -36,6 +36,7 @@ export enum Permission {
 
   // TPS Management
   MANAGE_TPS = "MANAGE_TPS",
+  VERIFY_TPS = "VERIFY_TPS",
 }
 
 // Permission map per admin level

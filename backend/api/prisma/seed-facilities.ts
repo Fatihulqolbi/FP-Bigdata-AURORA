@@ -1,0 +1,175 @@
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+const FACILITIES = [
+  {
+    code: "PLTSa-BENOWO",
+    name: "PLTSa Benowo",
+    type: "PLTSa",
+    kecamatan: "Benowo",
+    lat: -7.2185017137913645,
+    lng: 112.6258223434186,
+    capacityKg: 500_000,
+    acceptsTypes: ["RESIDU"],
+  },
+  {
+    code: "TPS3R-JAMBANGAN",
+    name: "TPS 3R Jambangan",
+    type: "TPS3R",
+    kecamatan: "Jambangan",
+    lat: -7.311002,
+    lng: 112.717690,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-JANTI",
+    name: "TPS 3R Janti",
+    type: "TPS3R",
+    kecamatan: "Janti",
+    lat: -7.349131484431199,
+    lng: 112.73746374666213,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-TAMBAKREJO",
+    name: "TPS3R Tambakrejo Waru",
+    type: "TPS3R",
+    kecamatan: "Waru",
+    lat: -7.348644092878298,
+    lng: 112.77775707071487,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-TAMBAKSAWAH",
+    name: "TPS3R Tambaksawah",
+    type: "TPS3R",
+    kecamatan: "Tambaksawah",
+    lat: -7.365188,
+    lng: 112.779062,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS-KAYON",
+    name: "TPS Kayon",
+    type: "TPS3R",
+    kecamatan: "Kayon",
+    lat: -7.269187,
+    lng: 112.747688,
+    capacityKg: 30_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-KARANGPILANG",
+    name: "TPS 3R Karang Pilang",
+    type: "TPS3R",
+    kecamatan: "Karang Pilang",
+    lat: -7.340819432013898,
+    lng: 112.67922957010325,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-NGINGAS",
+    name: "TPS 3R Ngingas",
+    type: "TPS3R",
+    kecamatan: "Ngingas",
+    lat: -7.358438,
+    lng: 112.739187,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-KEDUNGCOWEK",
+    name: "TPS3R Kedung Cowek",
+    type: "TPS3R",
+    kecamatan: "Kedung Cowek",
+    lat: -7.216563,
+    lng: 112.778813,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-BERBEK",
+    name: "TPS3R Berbek",
+    type: "TPS3R",
+    kecamatan: "Berbek",
+    lat: -7.343312,
+    lng: 112.762938,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-WADUNGASRI",
+    name: "TPS3R Desa Wadungasri",
+    type: "TPS3R",
+    kecamatan: "Wadungasri",
+    lat: -7.345312,
+    lng: 112.766687,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "TPS3R-GUNUNGANYAR",
+    name: "TPS 3R Gunung Anyar DLH",
+    type: "TPS3R",
+    kecamatan: "Gunung Anyar",
+    lat: -7.331812,
+    lng: 112.815312,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  {
+    code: "BS-INDUK",
+    name: "Bank Sampah Induk Surabaya",
+    type: "TPS3R",
+    kecamatan: "Menur",
+    lat: -7.278155883069684,
+    lng: 112.76292877892284,
+    capacityKg: 30_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS", "LOGAM"],
+  },
+  {
+    code: "TPS3R-WARUGUNUNG",
+    name: "TPS 3R Warugunung",
+    type: "TPS3R",
+    kecamatan: "Warugunung",
+    lat: -7.333187,
+    lng: 112.660312,
+    capacityKg: 50_000,
+    acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+];
+
+async function main() {
+  await prisma.sortingHub.deleteMany({});
+  console.log("Cleared existing facility data");
+
+  for (const facility of FACILITIES) {
+    await prisma.sortingHub.create({
+      data: {
+        code: facility.code,
+        name: facility.name,
+        type: facility.type,
+        kecamatan: facility.kecamatan,
+        lat: facility.lat,
+        lng: facility.lng,
+        capacityKg: facility.capacityKg,
+        currentLoadKg: 0,
+        acceptsTypes: facility.acceptsTypes,
+      },
+    });
+  }
+
+  console.log(`\nDone! ${FACILITIES.length} sorting hubs / facilities seeded.`);
+  await prisma.$disconnect();
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});
