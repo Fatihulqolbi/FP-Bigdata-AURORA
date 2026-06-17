@@ -6,34 +6,29 @@ import { checkRouteTraffic } from "./traffic.service.js";
 
 let intervalId: ReturnType<typeof setInterval> | null = null;
 const SIMULATION_INTERVAL_MS = 5000;
-const TRUCK_SPEED_MS = 13.88; // 50 km/h in m/s
-const MAX_PARALLEL_OSRM = 3;
+const TRUCK_SPEED_MS = 13.88; // 50 km/h
 const ASSIGN_BATCH_SIZE = 10;
-const MAX_WAYPOINTS = 3;
-const TRAFFIC_CHECK_INTERVAL_MS = 300000; // 5 minutes
+const TRAFFIC_CHECK_INTERVAL_MS = 300000;
 let lastTrafficCheck = 0;
 
-// Fill threshold: 75% for close (<5km), 50% for far (>=5km)
+// Scoring thresholds
 const FILL_THRESHOLD_CLOSE = 0.75;
 const FILL_THRESHOLD_FAR = 0.50;
-const CLOSE_DISTANCE_KM = 5;
+const CLOSE_DISTANCE_KM = 3; // 3km radius for "close"
+const MAX_ROUTE_QUEUE = 5;   // Max TPS stops in route queue
 
-// Fuel & Emission constants (Pertamina Dex)
-const FUEL_PRICE = 24800; // Rp/liter
-const FUEL_EFFICIENCY: Record<string, number> = {
-  COMPACTOR: 8,    // km/liter
-  DUMP_TRUCK: 6,   // km/liter
-  ARM_ROLL: 7,     // km/liter
-};
-const CO2_PER_LITER = 2.68; // kg CO2/liter diesel
+// Fuel & Emission
+const FUEL_PRICE = 24800;
+const FUEL_EFF: Record<string, number> = { COMPACTOR: 8, DUMP_TRUCK: 6, ARM_ROLL: 7 };
+const CO2_PER_LITER = 2.68;
 
 // Scoring weights
-const W_FILL = 0.35;
-const W_DISTANCE = 0.30;
-const W_FUEL = 0.20;
-const W_EMISSION = 0.15;
+const W_FILL = 0.40;
+const W_DIST = 0.35;
+const W_FUEL = 0.15;
+const W_EMIT = 0.10;
 
-// 4 depot locations
+// Depots
 const DEPOTS = [
   { name: "PLTSa Benowo", lat: -7.2185017137913645, lng: 112.6258223434186 },
   { name: "DLH Surabaya", lat: -7.278405714355262, lng: 112.76320233999931 },
@@ -41,30 +36,7 @@ const DEPOTS = [
   { name: "Depo Selatan", lat: -7.3000, lng: 112.7300 },
 ];
 
-function haversine(p1: Coordinate, p2: Coordinate): number {
-  const R = 6371000;
-  const dLat = (p2.lat - p1.lat) * Math.PI / 180;
-  const dLng = (p2.lng - p1.lng) * Math.PI / 180;
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(p1.lat * Math.PI / 180) *
-      Math.cos(p2.lat * Math.PI / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-interface TpsInfo {
-  id: string;
-  code: string;
-  name: string;
-  lat: number;
-  lng: number;
-  currentVolume: number;
-  capacityKg: number;
-  status: string;
-  type: string;
-}
-
+// --- Interfaces ---
 interface SimulationTruck {
   id: string;
   code: string;
@@ -85,189 +57,303 @@ interface SimulationTruck {
   destinationLat: number | null;
   destinationLng: number | null;
   routeWaypoints: any;
+  routeQueue: any;
+  routeLegIndex: number;
 }
 
-interface WaypointStop {
-  tpsId: string;
-  tpsName: string;
-  tpsLat: number;
-  tpsLng: number;
-  collectedKg: number;
+interface TpsInfo {
+  id: string;
+  code: string;
+  name: string;
+  lat: number;
+  lng: number;
+  currentVolume: number;
+  capacityKg: number;
+  status: string;
+  type: string;
 }
 
-function getFillThreshold(distanceKm: number): number {
-  return distanceKm < CLOSE_DISTANCE_KM ? FILL_THRESHOLD_CLOSE : FILL_THRESHOLD_FAR;
+// --- Helpers ---
+
+function haversine(p1: Coordinate, p2: Coordinate): number {
+  const R = 6371000;
+  const dLat = (p2.lat - p1.lat) * Math.PI / 180;
+  const dLng = (p2.lng - p1.lng) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(p1.lat * Math.PI / 180) * Math.cos(p2.lat * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getFuelEfficiency(truckType: string): number {
-  return FUEL_EFFICIENCY[truckType] || 7;
+function haversineKm(p1: Coordinate, p2: Coordinate): number {
+  return haversine(p1, p2) / 1000;
 }
 
-/**
- * Calculate multi-criteria score for a TPS candidate.
- * Higher score = better candidate.
- */
-function scoreTps(
-  tps: { fill: number; distanceKm: number; currentVolume: number },
-  truckType: string
-): number {
-  const fuelEff = getFuelEfficiency(truckType);
+function scoreTps(tps: { fill: number; distanceKm: number }, truckType: string): number {
+  const fuelEff = FUEL_EFF[truckType] || 7;
   const fuelCost = (tps.distanceKm / fuelEff) * FUEL_PRICE;
   const emission = (tps.distanceKm / fuelEff) * CO2_PER_LITER;
-
-  // Normalize: fill is 0-1, distance/fuel/emission need inverse normalization
   const fillScore = tps.fill;
-  const distScore = tps.distanceKm > 0 ? Math.min(1, 5 / tps.distanceKm) : 0; // 5km = score 1.0
-  const fuelScore = fuelCost > 0 ? Math.min(1, 50000 / fuelCost) : 0; // Rp50k = score 1.0
-  const emScore = emission > 0 ? Math.min(1, 10 / emission) : 1; // 10kg CO2 = score 1.0
-
-  return (fillScore * W_FILL) + (distScore * W_DISTANCE) + (fuelScore * W_FUEL) + (emScore * W_EMISSION);
+  const distScore = tps.distanceKm > 0 ? Math.min(1, 3 / tps.distanceKm) : 0;
+  const fuelScore = fuelCost > 0 ? Math.min(1, 30000 / fuelCost) : 1;
+  const emScore = emission > 0 ? Math.min(1, 5 / emission) : 1;
+  return fillScore * W_FILL + distScore * W_DIST + fuelScore * W_FUEL + emScore * W_EMIT;
 }
 
-/**
- * Find nearest depot to a given position.
- */
-function nearestDepot(pos: Coordinate): (typeof DEPOTS)[number] {
-  return DEPOTS.reduce((best, depot) => {
-    const d = haversine(pos, { lat: depot.lat, lng: depot.lng });
-    return d < haversine(pos, { lat: best.lat, lng: best.lng }) ? depot : best;
+function nearestDepot(pos: Coordinate) {
+  return DEPOTS.reduce((best, d) => {
+    return haversineKm(pos, d) < haversineKm(pos, best) ? d : best;
   }, DEPOTS[0]);
 }
 
+function nearestFacility(pos: Coordinate, facilities: { id: string; name?: string; lat: number; lng: number }[]) {
+  if (facilities.length === 0) return null;
+  return facilities.reduce((best, f) => {
+    return haversineKm(pos, { lat: f.lat, lng: f.lng }) < haversineKm(pos, { lat: best.lat, lng: best.lng }) ? f : best;
+  }, facilities[0]);
+}
+
+// --- Route Queue Interfaces ---
+
+interface RouteQueueItem {
+  type: "TPS" | "FACILITY";
+  tpsId?: string;
+  tpsName?: string;
+  tpsLat?: number;
+  tpsLng?: number;
+  facilityId?: string;
+  facilityName?: string;
+  facilityLat?: number;
+  facilityLng?: number;
+  collectedKg?: number;
+  status: "pending" | "active" | "done";
+}
+
+// --- Core Route Queue Functions ---
+
+function isValidCoord(lat: number | null, lng: number | null): boolean {
+  return lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && !(lat === 0 && lng === 0);
+}
+
 /**
- * Build multi-stop route for a truck with smart scoring.
- * Picks TPS stops based on multi-criteria score (fill, distance, fuel, emission).
- * Returns null if no qualifying TPS found.
+ * Build initial route queue for a truck: [TPS1, TPS2, ..., Facility]
+ * Only builds queue with TPS that pass fill threshold + 1 TPS = 1 truck enforcement.
  */
-async function buildMultiStopRoute(
+async function buildRouteQueue(
   truck: SimulationTruck,
   tpsList: TpsInfo[],
-  facilities: { id: string; lat: number; lng: number }[],
-  usedTpsCounts: Map<string, number>
-): Promise<{
-  route: Awaited<ReturnType<typeof getRoute>>;
-  waypoints: WaypointStop[];
-  facilityId: string;
-  stats: { fuelLiters: number; fuelCost: number; co2Kg: number; totalDistanceKm: number };
-} | null> {
-  // Find nearest depot to truck (or default)
-  const truckPos: Coordinate = truck.lat != null && truck.lng != null
-    ? { lat: truck.lat, lng: truck.lng }
+  facilities: { id: string; name?: string; lat: number; lng: number }[],
+  assignedTpsIds: Set<string>
+): Promise<RouteQueueItem[] | null> {
+  const truckPos: Coordinate = isValidCoord(truck.lat, truck.lng)
+    ? { lat: truck.lat!, lng: truck.lng! }
     : DEPOTS[0];
 
-  // Filter valid TPS and calculate scores
-  const scoredTps = [...tpsList]
-    .filter((t) => t.lat != null && t.lng != null && !isNaN(t.lat) && !isNaN(t.lng) && !(t.lat === 0 && t.lng === 0))
+  // Filter valid TPS with fill threshold + 1 TPS = 1 truck
+  const scoredTps = tpsList
+    .filter((t) => isValidCoord(t.lat, t.lng))
+    .filter((t) => !assignedTpsIds.has(t.id)) // strict 1 TPS = 1 truck
     .map((t) => {
       const fill = t.capacityKg > 0 ? t.currentVolume / t.capacityKg : 0;
-      const distanceKm = haversine(truckPos, { lat: t.lat, lng: t.lng }) / 1000;
-      const score = scoreTps({ fill, distanceKm, currentVolume: t.currentVolume }, truck.type);
+      const distanceKm = haversineKm(truckPos, { lat: t.lat, lng: t.lng });
+      const score = scoreTps({ fill, distanceKm }, truck.type);
       return { ...t, fill, distanceKm, score };
     })
     .filter((t) => {
-      const threshold = getFillThreshold(t.distanceKm);
-      const usedCount = usedTpsCounts.get(t.id) || 0;
-      const maxTrucks = t.currentVolume > truck.capacityKg ? 2 : 1;
-      return t.fill >= threshold && t.currentVolume > 0 && usedCount < maxTrucks;
+      const threshold = t.distanceKm < CLOSE_DISTANCE_KM ? FILL_THRESHOLD_CLOSE : FILL_THRESHOLD_FAR;
+      return t.fill >= threshold && t.currentVolume > 0;
     })
     .sort((a, b) => b.score - a.score);
 
   if (scoredTps.length === 0) return null;
 
-  // Pick stops with nearest-neighbor chaining (greedy TSP)
-  const stops: WaypointStop[] = [];
-  let remainingCapacity = truck.capacityKg;
-  const visitedIds = new Set<string>();
+  // Greedy nearest-neighbor chaining
+  const queue: RouteQueueItem[] = [];
+  let remaining = truck.capacityKg;
   let currentPos = truckPos;
+  const visited = new Set<string>();
 
-  // First stop: highest score
-  const firstTps = scoredTps[0];
-  const firstCollected = Math.min(firstTps.currentVolume, remainingCapacity);
-  if (firstCollected <= 0) return null;
+  // Pick first TPS (highest score)
+  const first = scoredTps[0];
+  const firstCollect = Math.min(first.currentVolume, remaining);
+  if (firstCollect <= 0) return null;
 
-  stops.push({
-    tpsId: firstTps.id,
-    tpsName: firstTps.name,
-    tpsLat: firstTps.lat,
-    tpsLng: firstTps.lng,
-    collectedKg: Math.round(firstCollected * 100) / 100,
+  queue.push({
+    type: "TPS", tpsId: first.id, tpsName: first.name,
+    tpsLat: first.lat, tpsLng: first.lng,
+    collectedKg: Math.round(firstCollect * 100) / 100,
+    status: "pending",
   });
-  visitedIds.add(firstTps.id);
-  remainingCapacity -= firstCollected;
-  currentPos = { lat: firstTps.lat, lng: firstTps.lng };
-  usedTpsCounts.set(firstTps.id, (usedTpsCounts.get(firstTps.id) || 0) + 1);
+  visited.add(first.id);
+  remaining -= firstCollect;
+  currentPos = { lat: first.lat, lng: first.lng };
 
-  // Subsequent stops: nearest high-score TPS to current position
-  while (stops.length < MAX_WAYPOINTS && remainingCapacity > 0) {
-    const candidates = scoredTps
-      .filter((t) => !visitedIds.has(t.id) && t.currentVolume > 0)
-      .map((t) => ({
-        ...t,
-        distFromCurrent: haversine(currentPos, { lat: t.lat, lng: t.lng }) / 1000,
-      }))
+  // Pick more TPS (nearest-neighbor chaining)
+  while (queue.length < MAX_ROUTE_QUEUE && remaining > 0) {
+    const next = scoredTps
+      .filter((t) => !visited.has(t.id) && t.currentVolume > 0)
+      .map((t) => ({ ...t, distFromCurrent: haversineKm(currentPos, { lat: t.lat, lng: t.lng }) }))
       .sort((a, b) => {
-        // Weighted: score + proximity bonus
-        const aScore = a.score * 0.6 + (Math.min(1, 3 / (a.distFromCurrent + 0.1)) * 0.4);
-        const bScore = b.score * 0.6 + (Math.min(1, 3 / (b.distFromCurrent + 0.1)) * 0.4);
-        return bScore - aScore;
-      });
+        const aS = a.score * 0.6 + (Math.min(1, 2 / (a.distFromCurrent + 0.1)) * 0.4);
+        const bS = b.score * 0.6 + (Math.min(1, 2 / (b.distFromCurrent + 0.1)) * 0.4);
+        return bS - aS;
+      })[0];
 
-    if (candidates.length === 0) break;
+    if (!next) break;
+    const collect = Math.min(next.currentVolume, remaining);
+    if (collect <= 0) break;
 
-    const next = candidates[0];
-    const collected = Math.min(next.currentVolume, remainingCapacity);
-    if (collected <= 0) break;
-
-    stops.push({
-      tpsId: next.id,
-      tpsName: next.name,
-      tpsLat: next.lat,
-      tpsLng: next.lng,
-      collectedKg: Math.round(collected * 100) / 100,
+    queue.push({
+      type: "TPS", tpsId: next.id, tpsName: next.name,
+      tpsLat: next.lat, tpsLng: next.lng,
+      collectedKg: Math.round(collect * 100) / 100,
+      status: "pending",
     });
-    visitedIds.add(next.id);
-    remainingCapacity -= collected;
+    visited.add(next.id);
+    remaining -= collect;
     currentPos = { lat: next.lat, lng: next.lng };
-    usedTpsCounts.set(next.id, (usedTpsCounts.get(next.id) || 0) + 1);
   }
 
-  if (stops.length === 0) return null;
+  // Add facility as last leg
+  const lastStop = queue[queue.length - 1];
+  const facility = nearestFacility({ lat: lastStop.tpsLat!, lng: lastStop.tpsLng! }, facilities);
+  if (facility) {
+    queue.push({
+      type: "FACILITY", facilityId: facility.id, facilityName: facility.name,
+      facilityLat: facility.lat, facilityLng: facility.lng,
+      status: "pending",
+    });
+  }
 
-  // Find nearest facility to last stop
-  const lastStop = stops[stops.length - 1];
-  const nearestFacility = facilities.reduce((best, f) => {
-    const d = haversine({ lat: lastStop.tpsLat, lng: lastStop.tpsLng }, { lat: f.lat, lng: f.lng });
-    const bestD = haversine({ lat: lastStop.tpsLat, lng: lastStop.tpsLng }, { lat: best.lat, lng: best.lng });
-    return d < bestD ? f : best;
-  }, facilities[0]);
+  return queue.length > 0 ? queue : null;
+}
 
-  // Find nearest depot to first TPS (for route origin)
-  const depot = nearestDepot({ lat: stops[0].tpsLat, lng: stops[0].tpsLng });
-  const routeOrigin: Coordinate = truck.lat != null && truck.lng != null
-    ? { lat: truck.lat, lng: truck.lng }
-    : { lat: depot.lat, lng: depot.lng };
+/**
+ * Advance to next leg in route queue.
+ * Returns updated truck data or null if no more legs.
+ */
+async function advanceToNextLeg(truck: SimulationTruck): Promise<{
+  status: string;
+  route: any;
+  routeProgress: number;
+  routeDistance: number;
+  routeDuration: number;
+  assignedTpsId: string | null;
+  destinationLat: number | null;
+  destinationLng: number | null;
+  facilityId: string | null;
+  routeLegIndex: number;
+  routeQueue: any;
+} | null> {
+  const queue = (truck.routeQueue as RouteQueueItem[]) || [];
+  const currentIdx = truck.routeLegIndex;
 
-  // Build OSRM route: origin → tps_a → tps_b → ... → facility
-  const routeDest: Coordinate = { lat: nearestFacility.lat, lng: nearestFacility.lng };
-  const routeWaypoints: Coordinate[] = stops.map((s) => ({ lat: s.tpsLat, lng: s.tpsLng }));
+  // Mark current leg as done
+  if (currentIdx < queue.length) {
+    queue[currentIdx].status = "done";
+  }
 
-  const route = await getRoute(routeOrigin, routeDest, routeWaypoints);
+  // Find next pending leg
+  const nextIdx = queue.findIndex((item, i) => i > currentIdx && item.status === "pending");
+  if (nextIdx === -1) return null; // No more legs
 
-  // Calculate route stats
-  const totalDistanceKm = route.distance / 1000;
-  const fuelEff = getFuelEfficiency(truck.type);
-  const fuelLiters = totalDistanceKm / fuelEff;
-  const fuelCost = Math.round(fuelLiters * FUEL_PRICE);
-  const co2Kg = Math.round(fuelLiters * CO2_PER_LITER * 100) / 100;
+  // Mark next leg as active
+  queue[nextIdx].status = "active";
+  const nextLeg = queue[nextIdx];
+
+  const origin: Coordinate = isValidCoord(truck.lat, truck.lng)
+    ? { lat: truck.lat!, lng: truck.lng! }
+    : DEPOTS[0];
+
+  let dest: Coordinate;
+  let assignedTpsId: string | null = null;
+  let destinationLat: number | null = null;
+  let destinationLng: number | null = null;
+  let facilityId: string | null = null;
+
+  if (nextLeg.type === "TPS") {
+    dest = { lat: nextLeg.tpsLat!, lng: nextLeg.tpsLng! };
+    assignedTpsId = nextLeg.tpsId!;
+    destinationLat = nextLeg.tpsLat!;
+    destinationLng = nextLeg.tpsLng!;
+  } else {
+    dest = { lat: nextLeg.facilityLat!, lng: nextLeg.facilityLng! };
+    facilityId = nextLeg.facilityId!;
+    destinationLat = nextLeg.facilityLat!;
+    destinationLng = nextLeg.facilityLng!;
+  }
+
+  const route = await getRoute(origin, dest);
+
+  const status = nextLeg.type === "TPS" ? "EN_ROUTE_TO_TPS" : "EN_ROUTE_TO_HUB";
 
   return {
-    route,
-    waypoints: stops,
-    facilityId: nearestFacility.id,
-    stats: { fuelLiters: Math.round(fuelLiters * 100) / 100, fuelCost, co2Kg, totalDistanceKm: Math.round(totalDistanceKm * 10) / 10 },
+    status,
+    route: route.geometry as any,
+    routeProgress: 0,
+    routeDistance: route.distance,
+    routeDuration: route.duration,
+    assignedTpsId,
+    destinationLat,
+    destinationLng,
+    facilityId,
+    routeLegIndex: nextIdx,
+    routeQueue: queue as any,
   };
 }
 
+/**
+ * Insert a new TPS leg into the truck's route queue (admin insert).
+ * Inserts after current active leg. Does NOT re-route.
+ */
+async function insertLeg(
+  truckId: string,
+  tpsId: string,
+  tpsName: string,
+  tpsLat: number,
+  tpsLng: number,
+  collectedKg: number
+) {
+  const truck = await prisma.truck.findUnique({ where: { id: truckId } });
+  if (!truck) throw new Error("Truck not found");
+
+  const queue = ((truck.routeQueue as unknown) as RouteQueueItem[]) || [];
+  const currentIdx = truck.routeLegIndex;
+
+  // Insert after current leg
+  const newLeg: RouteQueueItem = {
+    type: "TPS", tpsId, tpsName, tpsLat, tpsLng, collectedKg, status: "pending",
+  };
+
+  // Find position to insert (after current, before next facility)
+  let insertIdx = currentIdx + 1;
+  // Don't insert after a facility leg
+  while (insertIdx < queue.length && queue[insertIdx].type === "FACILITY") {
+    insertIdx--;
+  }
+  queue.splice(insertIdx, 0, newLeg);
+
+  // Recalculate remaining legs
+  const updatedQueue = queue;
+
+  return prisma.truck.update({
+    where: { id: truckId },
+    data: { routeQueue: updatedQueue as any },
+  });
+}
+
+// --- TPS Info Interface ---
+interface TpsInfo {
+  id: string;
+  code: string;
+  name: string;
+  lat: number;
+  lng: number;
+  currentVolume: number;
+  capacityKg: number;
+  status: string;
+  type: string;
+}
+
+// --- Main Tick ---
 async function tick() {
   try {
     const trucks = await prisma.truck.findMany() as SimulationTruck[];
@@ -281,153 +367,81 @@ async function tick() {
     const updates: Promise<any>[] = [];
     const changedTruckIds: string[] = [];
 
-    // --- Phase 1: Move trucks (fast, no OSRM calls) ---
+    // ── Phase 1: Move trucks ──────────────────────────────────────────────
     for (const truck of trucks) {
-      if (truck.status === "EN_ROUTE_TO_TPS" && truck.route) {
+      // ── EN_ROUTE_TO_TPS or EN_ROUTE_TO_HUB: move along route ─────────
+      if ((truck.status === "EN_ROUTE_TO_TPS" || truck.status === "EN_ROUTE_TO_HUB") && truck.route) {
         const geo = truck.route as unknown as GeoJSONLineString;
-        const dist = (truck.routeDistance || geo.coordinates.length * 10);
+        const dist = truck.routeDistance || geo.coordinates.length * 10;
         const step = SIMULATION_INTERVAL_MS / 1000 / (dist / TRUCK_SPEED_MS);
         const newProgress = Math.min(1, truck.routeProgress + step);
         const { position, heading } = interpolateAlongRoute(geo, newProgress);
 
         if (newProgress >= 1) {
-          // Arrived at TPS — check if there are more waypoints
-          const waypoints = (truck.routeWaypoints as WaypointStop[]) || [];
-          const currentWpIdx = waypoints.findIndex(
-            (wp) => Math.abs(wp.tpsLat - position[1]) < 0.001 && Math.abs(wp.tpsLng - position[0]) < 0.001
-          );
+          // ── Arrived at destination ─────────────────────────────────────
+          const currentLeg = ((truck.routeQueue as unknown) as RouteQueueItem[] | null)?.[truck.routeLegIndex];
 
-          if (currentWpIdx >= 0 && currentWpIdx < waypoints.length - 1) {
-            // More waypoints to visit — collect at current TPS, continue to next
-            const wp = waypoints[currentWpIdx];
-            const tps = activeTps.find((t) => t.id === wp.tpsId);
-            if (tps) {
-              const newVol = Math.max(0, tps.currentVolume - wp.collectedKg);
-              await prisma.tps.update({
-                where: { id: wp.tpsId },
-                data: { currentVolume: Math.round(newVol * 100) / 100 },
-              });
-            }
-            // Mark this waypoint as visited (set collectedKg to 0)
-            const updatedWps = waypoints.map((w, i) => i === currentWpIdx ? { ...w, collectedKg: 0 } : w);
-
-            // Continue to next waypoint — build route from current pos to next stops + facility
-            const remainingWps = updatedWps.filter((w) => w.collectedKg > 0);
-            const facility = facilities.find((f) => f.id === truck.facilityId) || facilities[0];
-
-            if (remainingWps.length > 0 && facility) {
-              const nextDest: Coordinate = { lat: facility.lat, lng: facility.lng };
-              const nextWaypoints: Coordinate[] = remainingWps.map((w) => ({ lat: w.tpsLat, lng: w.tpsLng }));
-              try {
-                const nextRoute = await getRoute({ lat: position[1], lng: position[0] }, nextDest, nextWaypoints);
-                updates.push(
-                  prisma.truck.update({
-                    where: { id: truck.id },
-                    data: {
-                      lat: position[1], lng: position[0], heading,
-                      route: nextRoute.geometry as any,
-                      routeProgress: 0,
-                      routeDistance: nextRoute.distance,
-                      routeDuration: nextRoute.duration,
-                      routeWaypoints: updatedWps as any,
-                      currentLoadKg: truck.currentLoadKg + wp.collectedKg,
-                    },
-                  })
-                );
-              } catch {
-                // OSRM failed — go directly to facility
-                updates.push(
-                  prisma.truck.update({
-                    where: { id: truck.id },
-                    data: {
-                      status: "EN_ROUTE_TO_HUB", lat: position[1], lng: position[0], heading,
-                      routeWaypoints: updatedWps as any,
-                      currentLoadKg: truck.currentLoadKg + wp.collectedKg,
-                    },
-                  })
-                );
-              }
-            } else {
-              // No more waypoints — head to facility
-              if (facility) {
-                try {
-                  const returnRoute = await getRoute({ lat: position[1], lng: position[0] }, { lat: facility.lat, lng: facility.lng });
-                  updates.push(
-                    prisma.truck.update({
-                      where: { id: truck.id },
-                      data: {
-                        status: "EN_ROUTE_TO_HUB", lat: position[1], lng: position[0], heading,
-                        route: returnRoute.geometry as any,
-                        routeProgress: 0, routeDistance: returnRoute.distance, routeDuration: returnRoute.duration,
-                        routeWaypoints: updatedWps as any,
-                        currentLoadKg: truck.currentLoadKg + wp.collectedKg,
-                      },
-                    })
-                  );
-                } catch {
-                  updates.push(
-                    prisma.truck.update({
-                      where: { id: truck.id },
-                      data: { status: "AVAILABLE", lat: position[1], lng: position[0], heading: 0, assignedTpsId: null, route: null, routeProgress: 0, routeWaypoints: null, currentLoadKg: 0 },
-                    })
-                  );
-                }
-              } else {
-                updates.push(
-                  prisma.truck.update({
-                    where: { id: truck.id },
-                    data: { status: "AVAILABLE", lat: position[1], lng: position[0], heading: 0, assignedTpsId: null, route: null, routeProgress: 0, routeWaypoints: null, currentLoadKg: 0 },
-                  })
-                );
-              }
-            }
+          if (truck.driverId) {
+            // Driver-driven: set LOADING, wait for driver
+            updates.push(
+              prisma.truck.update({
+                where: { id: truck.id },
+                data: {
+                  status: "LOADING",
+                  lat: position[1],
+                  lng: position[0],
+                  heading,
+                  routeProgress: 1.0,
+                },
+              })
+            );
+            changedTruckIds.push(truck.id);
           } else {
-            // Last waypoint (or no waypoints) — collect and head to facility
-            const wp = waypoints[currentWpIdx >= 0 ? currentWpIdx : 0];
-            if (wp) {
-              const tps = activeTps.find((t) => t.id === wp.tpsId);
+            // Autonomous: auto-collect + advance
+            if (currentLeg?.type === "TPS" && currentLeg.tpsId) {
+              const tps = activeTps.find((t) => t.id === currentLeg.tpsId);
               if (tps) {
-                const newVol = Math.max(0, tps.currentVolume - wp.collectedKg);
+                const collected = Math.min(tps.currentVolume, currentLeg.collectedKg || 0);
                 await prisma.tps.update({
-                  where: { id: wp.tpsId },
-                  data: { currentVolume: Math.round(newVol * 100) / 100 },
+                  where: { id: currentLeg.tpsId },
+                  data: { currentVolume: Math.max(0, tps.currentVolume - collected) },
                 });
+                truck.currentLoadKg += collected;
               }
             }
 
-            const facility = facilities.find((f) => f.id === truck.facilityId) || facilities[0];
-            if (facility) {
-              try {
-                const returnRoute = await getRoute({ lat: position[1], lng: position[0] }, { lat: facility.lat, lng: facility.lng });
-                updates.push(
-                  prisma.truck.update({
-                    where: { id: truck.id },
-                    data: {
-                      status: "EN_ROUTE_TO_HUB", lat: position[1], lng: position[0], heading,
-                      route: returnRoute.geometry as any,
-                      routeProgress: 0, routeDistance: returnRoute.distance, routeDuration: returnRoute.duration,
-                      routeWaypoints: null,
-                      currentLoadKg: truck.currentLoadKg + (wp?.collectedKg || 0),
-                    },
-                  })
-                );
-              } catch {
-                updates.push(
-                  prisma.truck.update({
-                    where: { id: truck.id },
-                    data: { status: "AVAILABLE", lat: position[1], lng: position[0], heading: 0, assignedTpsId: null, route: null, routeProgress: 0, routeWaypoints: null, currentLoadKg: 0 },
-                  })
-                );
-              }
-            } else {
+            // Advance to next leg
+            const nextLeg = await advanceToNextLeg(truck);
+            if (nextLeg) {
               updates.push(
                 prisma.truck.update({
                   where: { id: truck.id },
-                  data: { status: "AVAILABLE", lat: position[1], lng: position[0], heading: 0, assignedTpsId: null, route: null, routeProgress: 0, routeWaypoints: null, currentLoadKg: 0 },
+                  data: {
+                    ...nextLeg,
+                    lat: position[1],
+                    lng: position[0],
+                    heading,
+                    currentLoadKg: truck.currentLoadKg,
+                  },
+                })
+              );
+            } else {
+              // No more legs → AVAILABLE
+              updates.push(
+                prisma.truck.update({
+                  where: { id: truck.id },
+                  data: {
+                    status: "AVAILABLE", lat: position[1], lng: position[0], heading: 0,
+                    assignedTpsId: null, destinationLat: null, destinationLng: null,
+                    route: null, routeProgress: 0, routeDistance: null, routeDuration: null,
+                    routeWaypoints: null, routeQueue: null, routeLegIndex: 0,
+                    facilityId: null, currentLoadKg: 0,
+                  },
                 })
               );
             }
           }
+          changedTruckIds.push(truck.id);
         } else {
           // Still moving
           updates.push(
@@ -436,148 +450,140 @@ async function tick() {
               data: { lat: position[1], lng: position[0], heading, routeProgress: newProgress },
             })
           );
+          changedTruckIds.push(truck.id);
         }
-        changedTruckIds.push(truck.id);
-
-      } else if (truck.status === "EN_ROUTE_TO_HUB" && truck.route) {
-        const geo = truck.route as unknown as GeoJSONLineString;
-        const dist = (truck.routeDistance || geo.coordinates.length * 10);
-        const step = SIMULATION_INTERVAL_MS / 1000 / (dist / TRUCK_SPEED_MS);
-        const newProgress = Math.min(1, truck.routeProgress + step);
-        const { position, heading } = interpolateAlongRoute(geo, newProgress);
-
-        if (newProgress >= 1) {
-          updates.push(
-            prisma.truck.update({
-              where: { id: truck.id },
-              data: { status: "AVAILABLE", lat: position[1], lng: position[0], heading: 0, assignedTpsId: null, destinationLat: null, destinationLng: null, route: null, routeProgress: 0, routeDistance: null, routeDuration: null, routeWaypoints: null, currentLoadKg: 0 },
-            })
-          );
-        } else {
-          updates.push(
-            prisma.truck.update({
-              where: { id: truck.id },
-              data: { lat: position[1], lng: position[0], heading, routeProgress: newProgress },
-            })
-          );
-        }
-        changedTruckIds.push(truck.id);
       }
     }
 
     await Promise.all(updates);
 
-    // --- Phase 1.5: Traffic check (every 5 minutes) ---
+    // ── Phase 1.5: Traffic check (every 5 minutes) ────────────────────
     const now = Date.now();
     if (now - lastTrafficCheck > TRAFFIC_CHECK_INTERVAL_MS) {
       lastTrafficCheck = now;
-      const enRouteTrucks = trucks.filter((t) => t.status === "EN_ROUTE_TO_TPS" && t.route);
-      if (enRouteTrucks.length > 0) {
-        // Sample 3 trucks for traffic check (to stay within TomTom rate limits)
-        const sample = enRouteTrucks.slice(0, 3);
-        for (const truck of sample) {
-          try {
-            const geo = truck.route as unknown as GeoJSONLineString;
-            if (!geo?.coordinates?.length) continue;
-            const traffic = await checkRouteTraffic(geo.coordinates, 3);
-            if (traffic.avgCongestion < 0.5) {
-              logger.warn(`[TRAFFIC] ${truck.code} route congested: avg=${traffic.avgCongestion.toFixed(2)} worst=${traffic.worstCongestion.toFixed(2)}`);
-            } else {
-              logger.debug(`[TRAFFIC] ${truck.code} route clear: avg=${traffic.avgCongestion.toFixed(2)}`);
-            }
-          } catch {
-            // Ignore traffic check errors
+      const enRoute = trucks.filter((t) => t.status === "EN_ROUTE_TO_TPS" && t.route);
+      const sample = enRoute.slice(0, 3);
+      for (const truck of sample) {
+        try {
+          const geo = truck.route as unknown as GeoJSONLineString;
+          if (!geo?.coordinates?.length) continue;
+          const traffic = await checkRouteTraffic(geo.coordinates, 2);
+          if (traffic.avgCongestion < 0.5) {
+            logger.warn(`[TRAFFIC] ${truck.code} congested: avg=${traffic.avgCongestion.toFixed(2)}`);
           }
-        }
+        } catch { /* ignore */ }
       }
     }
 
-    // --- Phase 2: Assign AVAILABLE trucks with multi-TPS routes ---
-    // Exclude driver-claimed trucks (driverId set) from auto-assignment
-    const availableTrucks = trucks.filter((t) => t.status === "AVAILABLE" && !t.driverId);
-    if (availableTrucks.length > 0) {
-      // Count trucks already en-route per TPS (from previous ticks)
-      const assignedCounts = new Map<string, number>();
-      for (const t of trucks) {
-        if (t.status === "EN_ROUTE_TO_TPS" && t.assignedTpsId) {
-          assignedCounts.set(t.assignedTpsId, (assignedCounts.get(t.assignedTpsId) || 0) + 1);
-        }
-      }
+    // ── Phase 2: Assign AVAILABLE trucks (auto, no driver) ───────────
+    const autoTrucks = trucks.filter((t) => t.status === "AVAILABLE" && !t.driverId);
+    if (autoTrucks.length > 0) {
+      // 1 TPS = 1 truck enforcement
+      const assignedTpsIds = new Set(
+        trucks
+          .filter((t) => (t.status === "EN_ROUTE_TO_TPS" || t.status === "LOADING") && t.assignedTpsId)
+          .map((t) => t.assignedTpsId!)
+      );
 
-      const batchLimit = Math.min(availableTrucks.length, ASSIGN_BATCH_SIZE);
-      const batch = availableTrucks.slice(0, batchLimit);
+      const batchLimit = Math.min(autoTrucks.length, ASSIGN_BATCH_SIZE);
+      const batch = autoTrucks.slice(0, batchLimit);
 
-      // Build routes sequentially so assignedCounts is updated between trucks
-      const routeResults: { truck: SimulationTruck; result: Awaited<ReturnType<typeof buildMultiStopRoute>> }[] = [];
+      const routeResults: { truck: SimulationTruck; queue: RouteQueueItem[] }[] = [];
       for (const truck of batch) {
-        try {
-          const result = await buildMultiStopRoute(truck, activeTps, facilities, assignedCounts);
-          if (result) {
-            // Mark TPS as assigned so next truck won't pick the same one
-            for (const wp of result.waypoints) {
-              assignedCounts.set(wp.tpsId, (assignedCounts.get(wp.tpsId) || 0) + 1);
+        const queue = await buildRouteQueue(truck, activeTps, facilities, assignedTpsIds);
+        if (queue) {
+          // Mark TPS as assigned
+          for (const leg of queue) {
+            if (leg.type === "TPS" && leg.tpsId) {
+              assignedTpsIds.add(leg.tpsId);
             }
           }
-          routeResults.push({ truck, result });
-        } catch {
-          routeResults.push({ truck, result: null });
+          routeResults.push({ truck, queue });
         }
       }
 
       const assignUpdates: Promise<any>[] = [];
+      for (const { truck, queue } of routeResults) {
+        // Build route to first leg only
+        const firstLeg = queue[0];
+        const origin: Coordinate = truck.lat != null && truck.lng != null
+          ? { lat: truck.lat, lng: truck.lng }
+          : DEPOTS[0];
+        const dest: Coordinate = firstLeg.type === "TPS"
+          ? { lat: firstLeg.tpsLat!, lng: firstLeg.tpsLng! }
+          : { lat: firstLeg.facilityLat!, lng: firstLeg.facilityLng! };
 
-      for (const { truck, result } of routeResults) {
-        if (!result) continue;
+        try {
+          const route = await getRoute(origin, dest);
+          const heading = route.geometry.coordinates.length >= 2
+            ? Math.atan2(
+                route.geometry.coordinates[1][0] - route.geometry.coordinates[0][0],
+                route.geometry.coordinates[1][1] - route.geometry.coordinates[0][1]
+              ) * 180 / Math.PI
+            : 0;
 
-        const { route, waypoints, facilityId, stats } = result;
-        const heading = route.geometry.coordinates.length >= 2
-          ? Math.atan2(
-              route.geometry.coordinates[1][0] - route.geometry.coordinates[0][0],
-              route.geometry.coordinates[1][1] - route.geometry.coordinates[0][1]
-            ) * 180 / Math.PI
-          : 0;
+          const tpsId = firstLeg.type === "TPS" ? firstLeg.tpsId! : null;
+          const destLat = firstLeg.type === "TPS" ? firstLeg.tpsLat! : firstLeg.facilityLat!;
+          const destLng = firstLeg.type === "TPS" ? firstLeg.tpsLng! : firstLeg.facilityLng!;
+          const facId = firstLeg.type === "FACILITY" ? firstLeg.facilityId! : null;
 
-        const firstTps = activeTps.find((t) => t.id === waypoints[0].tpsId);
+          assignUpdates.push(
+            prisma.truck.update({
+              where: { id: truck.id },
+              data: {
+                status: firstLeg.type === "TPS" ? "EN_ROUTE_TO_TPS" : "EN_ROUTE_TO_HUB",
+                assignedTpsId: tpsId,
+                destinationLat: destLat,
+                destinationLng: destLng,
+                facilityId: facId,
+                route: route.geometry as any,
+                routeProgress: 0,
+                routeDistance: route.distance,
+                routeDuration: route.duration,
+                routeQueue: queue as any,
+                routeLegIndex: 0,
+                heading: heading < 0 ? heading + 360 : heading,
+                currentLoadKg: 0,
+              },
+            })
+          );
 
-        assignUpdates.push(
-          prisma.truck.update({
-            where: { id: truck.id },
-            data: {
-              status: "EN_ROUTE_TO_TPS",
-              assignedTpsId: waypoints[0].tpsId,
-              destinationLat: firstTps?.lat,
-              destinationLng: firstTps?.lng,
-              facilityId,
-              route: route.geometry as any,
-              routeProgress: 0,
-              routeDistance: route.distance,
-              routeDuration: route.duration,
-              routeWaypoints: waypoints as any,
-              heading: heading < 0 ? heading + 360 : heading,
-              currentLoadKg: 0,
-            },
-          })
-        );
+          // Mark first leg as active
+          queue[0].status = "active";
 
-        logger.debug(`[ROUTE] ${truck.code} → ${waypoints.map((w) => w.tpsName).join(" → ")} | ${stats.totalDistanceKm}km | Rp${stats.fuelCost.toLocaleString()} | ${stats.co2Kg}kg CO2`);
+          const legDesc = queue
+            .filter((l) => l.type === "TPS")
+            .map((l) => l.tpsName)
+            .join(" → ");
+          logger.debug(`[ROUTE] ${truck.code} → ${legDesc || "Hub"} | ${queue.length - 1} TPS`);
+        } catch {
+          // OSRM failed — skip
+        }
       }
 
       if (assignUpdates.length > 0) {
         await Promise.all(assignUpdates);
-        logger.debug(`[FLEET-SIM] Assigned ${assignUpdates.length} trucks with multi-TPS routes`);
+        logger.debug(`[FLEET-SIM] Assigned ${assignUpdates.length} trucks`);
       }
     }
 
-    // --- Phase 3: Broadcast to SSE clients ---
-    const allChangedIds = [...new Set([...changedTruckIds, ...trucks.filter((t) => t.status !== "AVAILABLE").map((t) => t.id)])];
+    // ── Phase 3: Broadcast ────────────────────────────────────────────
+    const allChangedIds = [
+      ...new Set([
+        ...changedTruckIds,
+        ...trucks.filter((t) => t.status !== "AVAILABLE").map((t) => t.id),
+      ]),
+    ];
     if (allChangedIds.length > 0) {
       const changedTrucks = await prisma.truck.findMany({
         where: { id: { in: allChangedIds } },
       });
       const criticalTpsList = activeTps
         .filter((t) => t.status === "PENUH")
-        .map((t) => ({ id: t.id, code: t.code, name: t.name, fill: t.capacityKg > 0 ? (t.currentVolume / t.capacityKg * 100).toFixed(0) : 0 }));
-
+        .map((t) => ({
+          id: t.id, code: t.code, name: t.name,
+          fill: t.capacityKg > 0 ? (t.currentVolume / t.capacityKg * 100).toFixed(0) : 0,
+        }));
       broadcastFleetUpdate({
         type: "tick",
         trucks: changedTrucks,
@@ -586,19 +592,16 @@ async function tick() {
       });
     }
 
-    logger.debug(`[FLEET-SIM] Moved ${changedTruckIds.length} trucks, ${availableTrucks.length} available`);
+    logger.debug(`[FLEET-SIM] Moved ${changedTruckIds.length} trucks, ${autoTrucks.length} auto-available`);
   } catch (err) {
-    logger.error("[FLEET-SIM] Simulation tick failed:", err);
+    logger.error("[FLEET-SIM] Tick failed:", err);
   }
 }
 
 export async function startTruckSimulation() {
   if (intervalId) return;
-
-  // Health check OSRM on startup
   await checkOsrmHealth();
-
-  logger.info("[FLEET-SIM] Truck simulation started (every 5s, multi-TPS mode)");
+  logger.info("[FLEET-SIM] Truck simulation started (route queue mode)");
   tick();
   intervalId = setInterval(tick, SIMULATION_INTERVAL_MS);
 }

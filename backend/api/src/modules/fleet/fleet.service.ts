@@ -131,6 +131,8 @@ export interface AvailableTruck {
   currentLoadKg: number;
   lat: number | null;
   lng: number | null;
+  currentStatus: string;
+  etaMinutes: number | null;
 }
 
 export interface TaskSuggestion {
@@ -150,32 +152,45 @@ export interface TaskSuggestion {
   priority: "KRITIS" | "TINGGI" | "SEDANG";
 }
 
+function truckEtaMinutes(truck: { status: string; routeProgress: number | null; routeDuration: number | null }): number | null {
+  if (truck.status !== "EN_ROUTE_TO_HUB") return null;
+  const progress = truck.routeProgress ?? 0;
+  const duration = truck.routeDuration ?? 0;
+  if (duration <= 0) return null;
+  return Math.max(1, Math.ceil(((1 - progress) * duration) / 60));
+}
+
 export async function getTaskSuggestions(): Promise<{ suggestions: TaskSuggestion[]; availableTrucks: AvailableTruck[] }> {
-  const [tpsList, trucksForRec, allAvailable] = await Promise.all([
+  const [tpsList, allTrucks] = await Promise.all([
     prisma.tps.findMany({
       where: { needsReview: false, status: { not: "NONAKTIF" }, currentVolume: { gt: 0 } },
       orderBy: { currentVolume: "desc" },
     }),
-    // For AI recommendation: prefer unclaimed trucks (no driverId)
     prisma.truck.findMany({
-      where: {
-        status: "AVAILABLE",
-        OR: [{ driverId: null }, { driverId: { isSet: false } }],
-      },
-      orderBy: { code: "asc" },
-    }),
-    // For dropdown: ALL available trucks (admin can override)
-    prisma.truck.findMany({
-      where: { status: "AVAILABLE" },
       orderBy: { code: "asc" },
     }),
   ]);
-  const availableTrucks = trucksForRec;
 
-  // Only TPS with fill >= 40%, capped at 12
+  // TPS yang sudah punya truk menuju (EN_ROUTE_TO_TPS atau LOADING)
+  const assignedTpsIds = new Set(
+    allTrucks
+      .filter((t) => (t.status === "EN_ROUTE_TO_TPS" || t.status === "LOADING") && t.assignedTpsId)
+      .map((t) => t.assignedTpsId!)
+  );
+
+  // Candidate trucks: AVAILABLE + EN_ROUTE_TO_HUB (returning) + truk dengan kapasitas tersisa
+  const candidateTrucks = allTrucks.filter((t) => {
+    if (t.status === "AVAILABLE") return true;
+    if (t.status === "EN_ROUTE_TO_HUB") return true;
+    // Truk dengan kapasitas tersisa (muatan < 50% kapasitas)
+    if (t.currentLoadKg < t.capacityKg * 0.5 && t.status !== "LOADING") return true;
+    return false;
+  });
+
+  // Only TPS with fill >= 40%, exclude already-assigned, cap at 12
   const candidates = tpsList
     .map((t) => ({ ...t, fillPct: t.capacityKg > 0 ? (t.currentVolume / t.capacityKg) * 100 : 0 }))
-    .filter((t) => t.fillPct >= 40)
+    .filter((t) => t.fillPct >= 40 && !assignedTpsIds.has(t.id))
     .sort((a, b) => b.fillPct - a.fillPct)
     .slice(0, 12);
 
@@ -186,20 +201,25 @@ export async function getTaskSuggestions(): Promise<{ suggestions: TaskSuggestio
     let bestTruck: (AvailableTruck & { distanceKm: number; score: number }) | null = null;
     let bestScore = -1;
 
-    for (const truck of availableTrucks) {
+    for (const truck of candidateTrucks) {
       if (usedTruckIds.has(truck.id)) continue;
       const distKm = truck.lat != null && truck.lng != null
         ? haversineKm(truck.lat, truck.lng, tps.lat, tps.lng)
         : 50;
+      const eta = truckEtaMinutes(truck);
       const fillScore = tps.fillPct / 100;
       const distScore = distKm > 0 ? Math.min(1, 5 / distKm) : 0;
-      const score = fillScore * 0.5 + distScore * 0.5;
+      // Penalize trucks that are still returning — higher ETA = lower score
+      const etaScore = eta != null ? Math.min(1, 10 / (eta + 1)) : 1.0;
+      const score = fillScore * 0.45 + distScore * 0.35 + etaScore * 0.20;
       if (score > bestScore) {
         bestScore = score;
         bestTruck = {
           id: truck.id, code: truck.code, type: truck.type,
           capacityKg: truck.capacityKg, currentLoadKg: truck.currentLoadKg,
           lat: truck.lat, lng: truck.lng,
+          currentStatus: truck.status,
+          etaMinutes: eta,
           distanceKm: Math.round(distKm * 10) / 10,
           score: Math.round(score * 100) / 100,
         };
@@ -227,10 +247,12 @@ export async function getTaskSuggestions(): Promise<{ suggestions: TaskSuggestio
 
   return {
     suggestions,
-    availableTrucks: allAvailable.map((t) => ({
+    availableTrucks: candidateTrucks.map((t) => ({
       id: t.id, code: t.code, type: t.type,
       capacityKg: t.capacityKg, currentLoadKg: t.currentLoadKg,
       lat: t.lat, lng: t.lng,
+      currentStatus: t.status,
+      etaMinutes: truckEtaMinutes(t),
     })),
   };
 }
@@ -243,42 +265,88 @@ export async function dispatchManual(truckId: string, tpsId: string) {
 
   if (!truck) throw new Error("Truck not found");
   if (!tps) throw new Error("TPS not found");
-  if (truck.status !== "AVAILABLE") throw new Error("Truck is not available");
 
   const facility = await prisma.sortingHub.findFirst({ orderBy: { currentLoadKg: "asc" } });
   if (!facility) throw new Error("No facility available");
 
-  const BENOWO: Coordinate = { lat: -7.2185017137913645, lng: 112.6258223434186 };
-  const origin: Coordinate = truck.lat != null && truck.lng != null
-    ? { lat: truck.lat, lng: truck.lng }
-    : BENOWO;
-  const dest: Coordinate = { lat: facility.lat, lng: facility.lng };
+  const collectedKg = Math.min(tps.currentVolume, truck.capacityKg - truck.currentLoadKg);
+  if (collectedKg <= 0) throw new Error("Truk sudah penuh");
 
-  const route = await getRoute(origin, dest, [{ lat: tps.lat, lng: tps.lng }]);
+  // If truck is AVAILABLE — create new route with TPS as first stop
+  if (truck.status === "AVAILABLE") {
+    const BENOWO: Coordinate = { lat: -7.2185017137913645, lng: 112.6258223434186 };
+    const origin: Coordinate = truck.lat != null && truck.lng != null
+      ? { lat: truck.lat, lng: truck.lng }
+      : BENOWO;
+    const dest: Coordinate = { lat: facility.lat, lng: facility.lng };
 
-  const collectedKg = Math.min(tps.currentVolume, truck.capacityKg);
-  const heading = route.geometry.coordinates.length >= 2
-    ? Math.atan2(
-        route.geometry.coordinates[1][0] - route.geometry.coordinates[0][0],
-        route.geometry.coordinates[1][1] - route.geometry.coordinates[0][1]
-      ) * 180 / Math.PI
-    : 0;
+    const route = await getRoute(origin, dest, [{ lat: tps.lat, lng: tps.lng }]);
 
-  return prisma.truck.update({
-    where: { id: truckId },
-    data: {
-      status: "EN_ROUTE_TO_TPS",
-      assignedTpsId: tps.id,
-      destinationLat: tps.lat,
-      destinationLng: tps.lng,
-      facilityId: facility.id,
-      route: route.geometry as any,
-      routeProgress: 0,
-      routeDistance: route.distance,
-      routeDuration: route.duration,
-      routeWaypoints: [{ tpsId: tps.id, tpsName: tps.name, tpsLat: tps.lat, tpsLng: tps.lng, collectedKg }] as any,
-      heading: heading < 0 ? heading + 360 : heading,
-      currentLoadKg: 0,
-    },
-  });
+    const heading = route.geometry.coordinates.length >= 2
+      ? Math.atan2(
+          route.geometry.coordinates[1][0] - route.geometry.coordinates[0][0],
+          route.geometry.coordinates[1][1] - route.geometry.coordinates[0][1]
+        ) * 180 / Math.PI
+      : 0;
+
+    return prisma.truck.update({
+      where: { id: truckId },
+      data: {
+        status: "EN_ROUTE_TO_TPS",
+        assignedTpsId: tps.id,
+        destinationLat: tps.lat,
+        destinationLng: tps.lng,
+        facilityId: facility.id,
+        route: route.geometry as any,
+        routeProgress: 0,
+        routeDistance: route.distance,
+        routeDuration: route.duration,
+        routeWaypoints: [{ tpsId: tps.id, tpsName: tps.name, tpsLat: tps.lat, tpsLng: tps.lng, collectedKg }] as any,
+        heading: heading < 0 ? heading + 360 : heading,
+        currentLoadKg: 0,
+      },
+    });
+  }
+
+  // If truck is already en-route — add TPS as additional waypoint
+  if (truck.status === "EN_ROUTE_TO_TPS" || truck.status === "LOADING") {
+    const existingWaypoints = (truck.routeWaypoints as any[]) || [];
+
+    // Check if TPS already in waypoints
+    const alreadyAssigned = existingWaypoints.some((w: any) => w.tpsId === tps.id);
+    if (alreadyAssigned) throw new Error("TPS sudah ada dalam rute");
+
+    // Add new waypoint
+    const newWaypoint = {
+      tpsId: tps.id,
+      tpsName: tps.name,
+      tpsLat: tps.lat,
+      tpsLng: tps.lng,
+      collectedKg,
+    };
+    const updatedWaypoints = [...existingWaypoints, newWaypoint];
+
+    // Rebuild route with all waypoints
+    const origin: Coordinate = truck.lat != null && truck.lng != null
+      ? { lat: truck.lat, lng: truck.lng }
+      : { lat: -7.2185017137913645, lng: 112.6258223434186 };
+    const dest: Coordinate = { lat: facility.lat, lng: facility.lng };
+    const waypoints: Coordinate[] = updatedWaypoints
+      .filter((w: any) => w.collectedKg > 0)
+      .map((w: any) => ({ lat: w.tpsLat, lng: w.tpsLng }));
+
+    const route = await getRoute(origin, dest, waypoints);
+
+    return prisma.truck.update({
+      where: { id: truckId },
+      data: {
+        route: route.geometry as any,
+        routeDistance: route.distance,
+        routeDuration: route.duration,
+        routeWaypoints: updatedWaypoints as any,
+      },
+    });
+  }
+
+  throw new Error("Truk tidak dalam status yang sesuai");
 }

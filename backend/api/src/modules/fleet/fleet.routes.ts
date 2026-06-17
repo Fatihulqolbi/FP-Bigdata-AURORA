@@ -25,14 +25,17 @@ router.post("/dispatch", requireAuth, fleetCtrl.dispatchManualHandler);
 // Driver workflow (specific routes FIRST, before wildcard :id)
 router.get("/driver/me", requireAuth, driverCtrl.getDriverInfo);
 router.get("/driver/assignment", requireAuth, driverCtrl.getAssignment);
+router.get("/driver/available-trucks", requireAuth, driverCtrl.getAvailableTrucks);
 router.post("/driver/claim", requireAuth, driverCtrl.claimTruck);
 router.post("/driver/release", requireAuth, driverCtrl.releaseTruck);
 router.post("/driver/start", requireAuth, driverCtrl.startRoute);
 router.post("/driver/arrive", requireAuth, driverCtrl.arriveAtTps);
 router.post("/driver/loading", requireAuth, driverCtrl.startLoading);
 router.post("/driver/complete", requireAuth, driverCtrl.completeLoading);
+router.post("/driver/auto-advance", requireAuth, driverCtrl.autoAdvance);
 router.post("/driver/arrive-hub", requireAuth, driverCtrl.arriveAtHub);
 router.post("/driver/unload", requireAuth, driverCtrl.unloadAtHub);
+router.post("/driver/admin-insert", requireAuth, driverCtrl.adminInsert);
 
 // Driver dashboard (legacy - wildcard LAST)
 router.get("/driver/:id", requireAuth, fleetCtrl.getDriverRoute);

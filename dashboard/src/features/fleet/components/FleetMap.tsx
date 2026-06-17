@@ -2,7 +2,23 @@ import { useMemo, useCallback } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Tooltip, Polyline } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { TruckData, TpsData, FacilityData, WaypointStop } from "../api/fleetApi";
+import type { TruckData, TpsData, FacilityData, WaypointStop, RouteQueueItem } from "../api/fleetApi";
+
+function getDisplayLoad(truck: TruckData): number {
+  // Use routeQueue if available (new route system)
+  const queue = truck.routeQueue as RouteQueueItem[] | null;
+  if (queue) {
+    const pendingTps = queue.filter((l) => l.type === "TPS" && l.status !== "done" && l.collectedKg);
+    const plannedFromQueue = pendingTps.reduce((s, l) => s + (l.collectedKg || 0), 0);
+    return truck.currentLoadKg + plannedFromQueue;
+  }
+  // Fallback to routeWaypoints (old system)
+  if (truck.routeWaypoints) {
+    const remaining = (truck.routeWaypoints as WaypointStop[]).reduce((s, w) => s + (w.collectedKg || 0), 0);
+    return truck.currentLoadKg + remaining;
+  }
+  return truck.currentLoadKg;
+}
 
 interface FleetMapProps {
   trucks: TruckData[];
@@ -238,22 +254,44 @@ export default function FleetMap({
         );
       })}
 
-      {/* Waypoint markers (only for selected truck) */}
-      {selectedTruck?.routeWaypoints && (selectedTruck.routeWaypoints as WaypointStop[]).filter((w) => w.collectedKg > 0).map((wp, i) => (
-        <Marker
-          key={`wp-${selectedTruck.id}-${wp.tpsId}`}
-          position={[wp.tpsLat, wp.tpsLng]}
-          icon={waypointIcon(i, routeColors[selectedTruck.type] || "#3b82f6")}
-          zIndexOffset={200}
-        >
-          <Tooltip direction="top" offset={L.point(0, -14)} opacity={1} permanent>
-            <div style={{ textAlign: "center" }}>
-              <strong style={{ color: "#000" }}>Stop {i + 1}: {wp.tpsName}</strong><br />
-              <span style={{ fontSize: "11px", color: "#666" }}>{wp.collectedKg.toLocaleString()} kg</span>
-            </div>
-          </Tooltip>
-        </Marker>
-      ))}
+      {/* Waypoint markers (from routeQueue) */}
+      {(() => {
+        const waypointsToShow: { lat: number; lng: number; name: string; kg: number; truckId: string; truckType: string; isActive: boolean; idx: number }[] = [];
+        const trucksForWps = selectedTruckId ? activeTrucks.filter((t) => t.id === selectedTruckId) : activeTrucks;
+        for (const truck of trucksForWps) {
+          const queue = (truck.routeQueue as RouteQueueItem[] | null) || [];
+          const tpsLegs = queue.filter((l) => l.type === "TPS" && l.status !== "done");
+          tpsLegs.forEach((leg, i) => {
+            if (leg.tpsLat && leg.tpsLng) {
+              waypointsToShow.push({
+                lat: leg.tpsLat,
+                lng: leg.tpsLng,
+                name: leg.tpsName || "TPS",
+                kg: leg.collectedKg || 0,
+                truckId: truck.id,
+                truckType: truck.type,
+                isActive: leg.status === "active",
+                idx: i,
+              });
+            }
+          });
+        }
+        return waypointsToShow.map((wp) => (
+          <Marker
+            key={`wp-${wp.truckId}-${wp.idx}-${wp.lat}`}
+            position={[wp.lat, wp.lng]}
+            icon={waypointIcon(wp.idx, wp.isActive ? (routeColors[wp.truckType] || "#3b82f6") : "#6b7280")}
+            zIndexOffset={wp.isActive ? 250 : 150}
+          >
+            <Tooltip direction="top" offset={L.point(0, -14)} opacity={1} permanent={wp.isActive}>
+              <div style={{ textAlign: "center", fontSize: "10px" }}>
+                <strong style={{ color: wp.isActive ? "#000" : "#666" }}>Stop {wp.idx + 1}: {wp.name}</strong><br />
+                <span style={{ color: "#666" }}>{wp.kg.toLocaleString()} kg</span>
+              </div>
+            </Tooltip>
+          </Marker>
+        ));
+      })()}
 
       {/* Active Truck Markers */}
       {activeTrucks.map((truck) => (
@@ -265,18 +303,38 @@ export default function FleetMap({
           eventHandlers={{ click: () => handleClick(truck) }}
         >
           <Popup>
-            <div style={{ fontSize: "12px", color: "#000", minWidth: "160px" }}>
+            <div style={{ fontSize: "12px", color: "#000", minWidth: "170px" }}>
               <strong>{truck.code} ({truck.type.replace("_", " ")})</strong><br />
               <span>Status: {statusText[truck.status] || truck.status}</span><br />
-              <span>Muatan: {truck.currentLoadKg.toLocaleString()} / {truck.capacityKg.toLocaleString()} kg</span>
+              <span>Muatan: {getDisplayLoad(truck).toLocaleString()} / {truck.capacityKg.toLocaleString()} kg{truck.status === "EN_ROUTE_TO_TPS" && truck.currentLoadKg < getDisplayLoad(truck) ? " ↗" : ""}</span>
               {truck.routeDistance != null && (
-                <><br /><span>Jarak: {(truck.routeDistance / 1000).toFixed(1)} km</span><br /><span>Progress: {(truck.routeProgress * 100).toFixed(0)}%</span></>
+                <><br /><span>Jarak leg: {(truck.routeDistance / 1000).toFixed(1)} km · {(truck.routeProgress * 100).toFixed(0)}%</span></>
               )}
-              {(truck.routeWaypoints as WaypointStop[] | null)?.filter((w) => w.collectedKg > 0).length > 0 && (
+              {(() => {
+                const legMin = truck.routeDuration && truck.routeProgress < 1
+                  ? Math.max(1, Math.ceil((1 - truck.routeProgress) * truck.routeDuration / 60)) : null;
+                const remaining = (truck.routeWaypoints as WaypointStop[] | null)?.filter(w => w.collectedKg > 0) || [];
+                const hubMin = legMin != null
+                  ? (truck.status === "EN_ROUTE_TO_HUB" ? legMin : legMin + Math.max(0, remaining.length - 1) * 6 + 20)
+                  : null;
+                return legMin != null ? (
+                  <>
+                    <br />
+                    {truck.status === "EN_ROUTE_TO_TPS" && <span style={{ color: "#2563eb" }}>ETA TPS: ~{legMin < 60 ? `${legMin}m` : `${Math.floor(legMin/60)}j ${legMin%60}m`}</span>}
+                    {truck.status === "EN_ROUTE_TO_HUB" && <span style={{ color: "#7c3aed" }}>ETA Hub: ~{legMin < 60 ? `${legMin}m` : `${Math.floor(legMin/60)}j ${legMin%60}m`}</span>}
+                    {hubMin != null && truck.status === "EN_ROUTE_TO_TPS" && <><br /><span style={{ color: "#059669" }}>Selesai: ~{hubMin < 60 ? `${hubMin}m` : `${Math.floor(hubMin/60)}j ${hubMin%60}m`}</span></>}
+                  </>
+                ) : null;
+              })()}
+              {(truck.routeQueue as RouteQueueItem[] | null)?.filter((l) => l.type === "TPS" && l.status !== "done").length > 0 && (
                 <>
                   <br /><span style={{ fontWeight: "bold", color: "#3b82f6" }}>Rute:</span>
-                  {(truck.routeWaypoints as WaypointStop[]).filter((w) => w.collectedKg > 0).map((wp, i) => (
-                    <div key={wp.tpsId} style={{ marginLeft: "8px", fontSize: "11px" }}>{i + 1}. {wp.tpsName} ({wp.collectedKg.toLocaleString()} kg)</div>
+                  {(truck.routeQueue as RouteQueueItem[]).filter((l) => l.type === "TPS").map((leg, i) => (
+                    <div key={leg.tpsId || i} style={{ marginLeft: "8px", fontSize: "11px", opacity: leg.status === "done" ? 0.4 : 1 }}>
+                      {i + 1}. {leg.tpsName} ({(leg.collectedKg || 0).toLocaleString()} kg)
+                      {leg.status === "done" && " ✓"}
+                      {leg.status === "active" && " ◀"}
+                    </div>
                   ))}
                 </>
               )}
@@ -311,13 +369,45 @@ export default function FleetMap({
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
               <div><span style={{ color: "#94a3b8" }}>Tipe:</span> {selectedTruck.type.replace("_", " ")}</div>
-              <div><span style={{ color: "#94a3b8" }}>Muatan:</span> {selectedTruck.currentLoadKg.toLocaleString()} / {selectedTruck.capacityKg.toLocaleString()} kg</div>
+              <div>
+                <span style={{ color: "#94a3b8" }}>Muatan:</span>{" "}
+                {getDisplayLoad(selectedTruck).toLocaleString()} / {selectedTruck.capacityKg.toLocaleString()} kg
+                {selectedTruck.status === "EN_ROUTE_TO_TPS" && selectedTruck.currentLoadKg < getDisplayLoad(selectedTruck) && (
+                  <span style={{ color: "#60a5fa", fontSize: "10px" }}> ↗</span>
+                )}
+              </div>
               {selectedTruck.routeDistance != null && (
                 <>
-                  <div><span style={{ color: "#94a3b8" }}>Jarak:</span> {(selectedTruck.routeDistance / 1000).toFixed(1)} km</div>
+                  <div><span style={{ color: "#94a3b8" }}>Jarak leg:</span> {(selectedTruck.routeDistance / 1000).toFixed(1)} km</div>
                   <div><span style={{ color: "#94a3b8" }}>Progress:</span> {(selectedTruck.routeProgress * 100).toFixed(0)}%</div>
                 </>
               )}
+              {(() => {
+                const legMin = selectedTruck.routeDuration && selectedTruck.routeProgress < 1
+                  ? Math.max(1, Math.ceil((1 - selectedTruck.routeProgress) * selectedTruck.routeDuration / 60)) : null;
+                const remaining = (selectedTruck.routeWaypoints as WaypointStop[] | null)?.filter(w => w.collectedKg > 0) || [];
+                const hubMin = legMin != null
+                  ? (selectedTruck.status === "EN_ROUTE_TO_HUB" ? legMin : legMin + Math.max(0, remaining.length - 1) * 6 + 20)
+                  : null;
+                const fmt = (m: number) => m < 60 ? `~${m} mnt` : `~${Math.floor(m/60)}j ${m%60}m`;
+                return (
+                  <>
+                    {legMin != null && selectedTruck.status === "EN_ROUTE_TO_TPS" && (
+                      <div><span style={{ color: "#94a3b8" }}>ETA TPS:</span> <span style={{ color: "#60a5fa", fontWeight: 600 }}>{fmt(legMin)}</span></div>
+                    )}
+                    {legMin != null && selectedTruck.status === "EN_ROUTE_TO_HUB" && (
+                      <div><span style={{ color: "#94a3b8" }}>ETA Hub:</span> <span style={{ color: "#a78bfa", fontWeight: 600 }}>{fmt(legMin)}</span></div>
+                    )}
+                    {hubMin != null && selectedTruck.status === "EN_ROUTE_TO_TPS" && (
+                      <div style={{ gridColumn: "span 2" }}>
+                        <span style={{ color: "#94a3b8" }}>Est. Selesai:</span>{" "}
+                        <span style={{ color: "#34d399", fontWeight: 600 }}>{fmt(hubMin)}</span>
+                        <span style={{ color: "#94a3b8", fontSize: "10px" }}> (TPS + hub)</span>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
             {/* Waypoints list */}
             {(selectedTruck.routeWaypoints as WaypointStop[] | null)?.filter((w) => w.collectedKg > 0).length > 0 && (

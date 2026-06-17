@@ -20,6 +20,10 @@ interface Assignment {
   truck: TruckInfo;
   route: { geometry: any; distance: number | null; duration: number | null; progress: number };
   waypoints: { tpsId: string; tpsName: string; tpsLat: number; tpsLng: number; collectedKg: number; tpsCurrentVolume: number; tpsCapacity: number }[];
+  routeQueue: { type: string; tpsId?: string; tpsName?: string; tpsLat?: number; tpsLng?: number; facilityId?: string; facilityName?: string; facilityLat?: number; facilityLng?: number; collectedKg?: number; status: string }[];
+  activeLeg: { type: string; tpsId?: string; tpsName?: string; tpsLat?: number; tpsLng?: number; facilityId?: string; facilityName?: string; facilityLat?: number; facilityLng?: number; collectedKg?: number; status: string } | null;
+  pendingLegs: { type: string; tpsId?: string; tpsName?: string; tpsLat?: number; tpsLng?: number; collectedKg?: number; status: string }[];
+  doneLegs: { type: string; tpsId?: string; tpsName?: string; collectedKg?: number; status: string }[];
   facility: { id: string; name: string; lat: number; lng: number } | null;
 }
 
@@ -89,6 +93,27 @@ export default function DriverPage() {
     finally { setActionLoading(false); }
   };
 
+  // Claim specific truck or auto-assign
+  const doClaim = async (truckId?: string) => {
+    setActionLoading(true);
+    try {
+      const body: any = {};
+      if (truckId) body.truckId = truckId;
+      const res = await fetch(`${API_BASE}/fleet/driver/claim`, {
+        method: "POST", headers,
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Truk ${data.truck.code} berhasil di-assign`);
+        await fetchData();
+      } else {
+        toast.error(data.error || "Gagal");
+      }
+    } catch { toast.error("Koneksi gagal"); }
+    finally { setActionLoading(false); }
+  };
+
   // Release truck back to pool
   const doRelease = async () => {
     if (!truck || truck.status !== "AVAILABLE") {
@@ -115,9 +140,31 @@ export default function DriverPage() {
     return assignment.route.geometry.coordinates.map((c: [number, number]) => [c[1], c[0]] as [number, number]);
   }, [assignment]);
 
-  // Current waypoint (first with collectedKg > 0)
-  const currentWp = assignment?.waypoints?.find((w) => w.collectedKg > 0);
-  const nextWps = assignment?.waypoints?.filter((w) => w.collectedKg > 0).slice(1) || [];
+  // Use routeQueue for multi-TPS display
+  const routeQueue = assignment?.routeQueue || [];
+  const activeLeg = assignment?.activeLeg || null;
+  const pendingLegs = assignment?.pendingLegs || [];
+  const doneLegs = assignment?.doneLegs || [];
+
+  // Current waypoint from activeLeg or waypoints (backward compat)
+  const currentWp = activeLeg?.type === "TPS"
+    ? { tpsId: activeLeg.tpsId, tpsName: activeLeg.tpsName, tpsLat: activeLeg.tpsLat, tpsLng: activeLeg.tpsLng, collectedKg: activeLeg.collectedKg || 0 }
+    : assignment?.waypoints?.find((w) => w.collectedKg > 0);
+
+  // All TPS stops from routeQueue
+  const allTpsStops = useMemo(() => {
+    return routeQueue.filter((l) => l.type === "TPS").map((l, i) => ({
+      tpsId: l.tpsId || "",
+      tpsName: l.tpsName || "TPS",
+      tpsLat: l.tpsLat || 0,
+      tpsLng: l.tpsLng || 0,
+      collectedKg: l.collectedKg || 0,
+      status: l.status,
+      order: i + 1,
+    }));
+  }, [routeQueue]);
+
+  const nextWps = allTpsStops.filter((w) => w.status === "pending");
   const progressPct = assignment?.route?.progress ? Math.round(assignment.route.progress * 100) : 0;
 
   // Status-based rendering
@@ -147,7 +194,7 @@ export default function DriverPage() {
       {/* Content based on status */}
       {!truck && (
         <ClaimTruckScreen
-          onClaim={() => doAction("claim", "Truk berhasil di-claim!")}
+          onClaim={(truckId) => doClaim(truckId)}
           loading={actionLoading}
         />
       )}
@@ -166,6 +213,7 @@ export default function DriverPage() {
           assignment={assignment}
           routeCoords={routeCoords}
           currentWp={currentWp}
+          allTpsStops={allTpsStops}
           progressPct={progressPct}
           onArrive={() => doAction("arrive", "Sampai di TPS!")}
           loading={actionLoading}
@@ -202,30 +250,114 @@ export default function DriverPage() {
 
 // --- Sub-components ---
 
-function ClaimTruckScreen({ onClaim, loading }: { onClaim: () => void; loading: boolean }) {
+function ClaimTruckScreen({ onClaim, loading }: { onClaim: (truckId?: string) => void; loading: boolean }) {
+  const [availableTrucks, setAvailableTrucks] = useState<any[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const [selectedTruckId, setSelectedTruckId] = useState<string>("");
+  const [showList, setShowList] = useState(false);
+  const token = localStorage.getItem("aurora_token") || "";
+
+  const fetchTrucks = async () => {
+    setFetching(true);
+    try {
+      const res = await fetch("http://localhost:4000/api/fleet/driver/available-trucks", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setAvailableTrucks(data);
+        setShowList(true);
+      }
+    } catch { /* ignore */ }
+    finally { setFetching(false); }
+  };
+
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div className="glass-panel" style={{ padding: "48px", textAlign: "center", maxWidth: "400px" }}>
-        <Truck size={64} style={{ color: "var(--text-secondary)", opacity: 0.3, marginBottom: "20px" }} />
-        <div style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "8px" }}>
+      <div className="glass-panel" style={{ padding: "40px", textAlign: "center", maxWidth: "500px", width: "100%" }}>
+        <Truck size={56} style={{ color: "var(--text-secondary)", opacity: 0.3, marginBottom: "16px" }} />
+        <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "6px" }}>
           Selamat datang, Supir!
         </div>
-        <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "24px" }}>
-          Anda belum memiliki truk yang di-assign. Klik tombol di bawah untuk mengambil truk dari depo.
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "20px" }}>
+          Pilih truk dari depo untuk memulai.
         </div>
-        <button
-          onClick={onClaim}
-          disabled={loading}
-          style={{
-            padding: "12px 24px", borderRadius: "10px",
-            background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white",
-            border: "none", fontSize: "14px", fontWeight: 700,
-            cursor: loading ? "wait" : "pointer",
-            boxShadow: "0 4px 12px rgba(59,130,246,0.3)",
-          }}
-        >
-          {loading ? "Mengambil truk..." : "Ambil Truk dari Depo"}
-        </button>
+
+        {!showList ? (
+          <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
+            <button
+              onClick={fetchTrucks}
+              disabled={fetching}
+              style={{
+                padding: "10px 20px", borderRadius: "8px",
+                background: "rgba(255,255,255,0.06)", color: "var(--text-primary)",
+                border: "1px solid rgba(255,255,255,0.12)", fontSize: "12px", cursor: "pointer",
+              }}
+            >
+              {fetching ? "Memuat..." : "Pilih Truk Spesifik"}
+            </button>
+            <button
+              onClick={() => onClaim()}
+              disabled={loading}
+              style={{
+                padding: "10px 20px", borderRadius: "8px",
+                background: "linear-gradient(135deg, #3b82f6, #2563eb)", color: "white",
+                border: "none", fontSize: "12px", fontWeight: 700,
+                cursor: loading ? "wait" : "pointer",
+              }}
+            >
+              {loading ? "Mengambil..." : "Auto-Assign"}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div style={{ maxHeight: "250px", overflowY: "auto", marginBottom: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+              {availableTrucks.length === 0 ? (
+                <div style={{ padding: "12px", color: "var(--text-secondary)", fontSize: "11px" }}>Tidak ada truk tersedia</div>
+              ) : (
+                availableTrucks.map((t) => (
+                  <div
+                    key={t.id}
+                    onClick={() => setSelectedTruckId(t.id === selectedTruckId ? "" : t.id)}
+                    style={{
+                      padding: "8px 12px", borderRadius: "6px", cursor: "pointer",
+                      background: selectedTruckId === t.id ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${selectedTruckId === t.id ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.06)"}`,
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-primary)" }}>{t.code}</div>
+                      <div style={{ fontSize: "10px", color: "var(--text-secondary)" }}>{t.type.replace("_", " ")} · {(t.capacityKg / 1000).toFixed(0)} Ton</div>
+                    </div>
+                    {selectedTruckId === t.id && <CheckCircle size={16} style={{ color: "#3b82f6" }} />}
+                  </div>
+                ))
+              )}
+            </div>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+              <button
+                onClick={() => { setShowList(false); setSelectedTruckId(""); }}
+                style={{ padding: "8px 16px", borderRadius: "6px", background: "rgba(255,255,255,0.06)", color: "var(--text-primary)", border: "1px solid rgba(255,255,255,0.12)", fontSize: "11px", cursor: "pointer" }}
+              >
+                Kembali
+              </button>
+              <button
+                onClick={() => onClaim(selectedTruckId || undefined)}
+                disabled={!selectedTruckId || loading}
+                style={{
+                  padding: "8px 20px", borderRadius: "6px",
+                  background: selectedTruckId ? "linear-gradient(135deg, #3b82f6, #2563eb)" : "rgba(255,255,255,0.06)",
+                  color: selectedTruckId ? "white" : "var(--text-secondary)",
+                  border: "none", fontSize: "11px", fontWeight: 700,
+                  cursor: loading ? "wait" : "pointer",
+                }}
+              >
+                {loading ? "Mengambil..." : "Ambil Truk Ini"}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -258,7 +390,9 @@ function WelcomeScreen({ truck }: { truck: TruckInfo }) {
 
 function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignment | null; onGo: () => void; loading: boolean }) {
   if (!assignment) return null;
-  const firstWp = assignment.waypoints[0];
+  const routeQueue = assignment.routeQueue || [];
+  const tpsStops = routeQueue.filter((l) => l.type === "TPS");
+  const firstStop = tpsStops[0];
   const totalDist = assignment.route.distance ? (assignment.route.distance / 1000).toFixed(1) : "?";
   const totalDuration = assignment.route.duration ? Math.round(assignment.route.duration / 60) : "?";
 
@@ -270,12 +404,12 @@ function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignmen
           <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-primary)" }}>Tugas Baru!</div>
         </div>
 
-        {firstWp && (
+        {firstStop && (
           <div style={{ padding: "16px", borderRadius: "10px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.15)", marginBottom: "16px" }}>
             <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Tujuan Pertama</div>
-            <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>{firstWp.tpsName}</div>
+            <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>{firstStop.tpsName}</div>
             <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
-              Volume: {firstWp.tpsCurrentVolume.toLocaleString()} / {firstWp.tpsCapacity.toLocaleString()} kg
+              Rencana: {(firstStop.collectedKg || 0).toLocaleString()} kg
             </div>
           </div>
         )}
@@ -291,16 +425,22 @@ function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignmen
           </div>
         </div>
 
-        {assignment.waypoints.length > 1 && (
+        {tpsStops.length > 0 && (
           <div style={{ marginBottom: "20px" }}>
             <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: "8px" }}>Rute Multi-Stop:</div>
-            {assignment.waypoints.filter((w) => w.collectedKg > 0).map((wp, i) => (
-              <div key={wp.tpsId} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", fontSize: "12px" }}>
+            {tpsStops.map((wp, i) => (
+              <div key={wp.tpsId || i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", fontSize: "12px" }}>
                 <span style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white", fontWeight: "bold" }}>{i + 1}</span>
                 <span style={{ color: "var(--text-primary)" }}>{wp.tpsName}</span>
-                <span style={{ marginLeft: "auto", color: "var(--text-secondary)", fontSize: "10px" }}>{wp.collectedKg.toLocaleString()} kg</span>
+                <span style={{ marginLeft: "auto", color: "var(--text-secondary)", fontSize: "10px" }}>{(wp.collectedKg || 0).toLocaleString()} kg</span>
               </div>
             ))}
+            {assignment.facility && (
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "4px", fontSize: "12px" }}>
+                <span style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#8b5cf6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white", fontWeight: "bold" }}>H</span>
+                <span style={{ color: "var(--text-secondary)" }}>{assignment.facility.name}</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -324,9 +464,9 @@ function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignmen
   );
 }
 
-function NavigationScreen({ truck, assignment, routeCoords, currentWp, progressPct, onArrive, loading }: {
+function NavigationScreen({ truck, assignment, routeCoords, currentWp, allTpsStops, progressPct, onArrive, loading }: {
   truck: TruckInfo; assignment: Assignment; routeCoords: [number, number][];
-  currentWp: any; progressPct: number; onArrive: () => void; loading: boolean;
+  currentWp: any; allTpsStops: any[]; progressPct: number; onArrive: () => void; loading: boolean;
 }) {
   return (
     <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 300px", gap: "16px", minHeight: 0 }}>
@@ -338,6 +478,7 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, progressP
           style={{ height: "100%", width: "100%" }}
         >
           <TileLayer url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png" />
+          {/* Route polyline */}
           {routeCoords.length > 1 && <Polyline positions={routeCoords} color="#3b82f6" weight={5} opacity={0.8} />}
           {truck.lat && truck.lng && (
             <Marker position={[truck.lat, truck.lng]} icon={truckIcon(truck.heading)}>
@@ -346,10 +487,15 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, progressP
               </Tooltip>
             </Marker>
           )}
-          {assignment.waypoints.filter((w) => w.collectedKg > 0).map((wp, i) => (
-            <Marker key={wp.tpsId} position={[wp.tpsLat, wp.tpsLng]} icon={waypointIcon(i, "#3b82f6")}>
+          {/* Waypoint markers from routeQueue */}
+          {allTpsStops.filter((w) => w.status !== "done").map((wp, i) => (
+            <Marker key={wp.tpsId} position={[wp.tpsLat, wp.tpsLng]} icon={waypointIcon(i, wp.status === "active" ? "#3b82f6" : "#6b7280")}>
               <Tooltip direction="top" offset={L.point(0, -14)}>
-                <div style={{ textAlign: "center", fontSize: "11px" }}><strong>{wp.tpsName}</strong><br />{wp.collectedKg.toLocaleString()} kg</div>
+                <div style={{ textAlign: "center", fontSize: "11px" }}>
+                  <strong>{wp.tpsName}</strong><br />
+                  <span>{wp.collectedKg.toLocaleString()} kg</span>
+                  {wp.status === "active" && <span style={{ color: "#3b82f6" }}> (Saat ini)</span>}
+                </div>
               </Tooltip>
             </Marker>
           ))}
@@ -374,7 +520,7 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, progressP
         </div>
       </div>
 
-      {/* Info panel */}
+        {/* Info panel */}
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflow: "auto" }}>
         <div className="glass-panel" style={{ padding: "16px", borderLeft: "3px solid #3b82f6" }}>
           <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Menuju TPS</div>
@@ -382,23 +528,44 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, progressP
           <div style={{ display: "flex", gap: "12px", fontSize: "11px", marginTop: "8px" }}>
             <span style={{ color: "var(--text-secondary)" }}>{assignment.route.distance ? (assignment.route.distance / 1000).toFixed(1) : 0} km</span>
             <span style={{ color: "var(--text-secondary)" }}>{assignment.route.duration ? Math.round(assignment.route.duration / 60) : 0} menit</span>
+            <span style={{ color: "var(--text-secondary)" }}>{truck.currentLoadKg.toLocaleString()} / {truck.capacityKg.toLocaleString()} kg</span>
           </div>
         </div>
 
-        <div className="glass-panel" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Muatan</div>
-          <div style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)" }}>{truck.currentLoadKg.toLocaleString()} <span style={{ fontSize: "12px", color: "var(--text-secondary)" }}>/ {truck.capacityKg.toLocaleString()} kg</span></div>
-        </div>
-
-        {assignment.waypoints.filter((w) => w.collectedKg > 0).length > 1 && (
+        {/* Full route queue display */}
+        {allTpsStops.length > 0 && (
           <div className="glass-panel" style={{ padding: "16px" }}>
-            <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Rute</div>
-            {assignment.waypoints.filter((w) => w.collectedKg > 0).map((wp, i) => (
-              <div key={wp.tpsId} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", fontSize: "11px" }}>
-                <span style={{ width: "16px", height: "16px", borderRadius: "50%", background: i === 0 ? "#3b82f6" : "rgba(59,130,246,0.3)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "9px", color: "white", fontWeight: "bold" }}>{i + 1}</span>
-                <span style={{ color: i === 0 ? "var(--text-primary)" : "var(--text-secondary)" }}>{wp.tpsName}</span>
-              </div>
-            ))}
+            <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Rute Lengkap</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {allTpsStops.map((wp) => (
+                <div key={wp.tpsId} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
+                  <span style={{
+                    width: "16px", height: "16px", borderRadius: "50%",
+                    background: wp.status === "active" ? "#3b82f6" : wp.status === "done" ? "#10b981" : "rgba(255,255,255,0.1)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "9px", color: "white", fontWeight: "bold",
+                  }}>
+                    {wp.status === "done" ? "✓" : wp.order}
+                  </span>
+                  <span style={{ color: wp.status === "active" ? "var(--text-primary)" : "var(--text-secondary)", flex: 1 }}>
+                    {wp.tpsName}
+                  </span>
+                  <span style={{ color: "var(--text-secondary)", fontSize: "10px" }}>
+                    {wp.collectedKg.toLocaleString()} kg
+                  </span>
+                </div>
+              ))}
+              {assignment.facility && (
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px", marginTop: "4px" }}>
+                  <span style={{
+                    width: "16px", height: "16px", borderRadius: "50%", background: "#8b5cf6",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "9px", color: "white", fontWeight: "bold",
+                  }}>H</span>
+                  <span style={{ color: "var(--text-secondary)" }}>{assignment.facility.name}</span>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -422,32 +589,70 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, progressP
 function LoadingScreen({ truck, currentWp, onComplete, loading }: {
   truck: TruckInfo; currentWp: any; onComplete: () => void; loading: boolean;
 }) {
+  const [secondsLeft, setSecondsLeft] = useState(240); // 4 minutes
+  const [autoAdvanced, setAutoAdvanced] = useState(false);
+
+  useEffect(() => {
+    if (autoAdvanced) return;
+    const interval = setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Auto-advance
+          setAutoAdvanced(true);
+          fetch("http://localhost:4000/api/fleet/driver/auto-advance", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("aurora_token") || ""}`,
+            },
+          }).then(() => {
+            window.location.reload();
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [autoAdvanced]);
+
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="glass-panel" style={{ padding: "48px", textAlign: "center", maxWidth: "400px" }}>
-        <div style={{ fontSize: "64px", marginBottom: "20px" }}><Loader2 size={64} style={{ color: "var(--text-secondary)", opacity: 0.3 }} className="animate-spin" /></div>
+        <Loader2 size={56} style={{ color: "var(--text-secondary)", opacity: 0.3, marginBottom: "16px" }} className="animate-spin" />
         <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "8px" }}>Proses Mengangkut</div>
         {currentWp && (
-          <div style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "20px" }}>
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px" }}>
             TPS: <strong style={{ color: "var(--text-primary)" }}>{currentWp.tpsName}</strong>
             <br />
             Volume: {currentWp.collectedKg.toLocaleString()} kg
           </div>
         )}
-        <div style={{ padding: "12px 20px", borderRadius: "8px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "13px", color: "#f59e0b", marginBottom: "24px", display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
-          <Loader2 size={16} className="animate-spin" />
+        <div style={{ padding: "10px 16px", borderRadius: "8px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "12px", color: "#f59e0b", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
+          <Loader2 size={14} className="animate-spin" />
           Sedang mengangkut sampah...
+        </div>
+        {/* Countdown timer */}
+        <div style={{ padding: "8px 12px", borderRadius: "6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "16px" }}>
+          <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "4px" }}>Auto-advance dalam</div>
+          <div style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>
+            {minutes}:{seconds.toString().padStart(2, "0")}
+          </div>
         </div>
         <button
           onClick={onComplete}
-          disabled={loading}
+          disabled={loading || autoAdvanced}
           style={{
             width: "100%", padding: "14px", borderRadius: "10px",
             background: "linear-gradient(135deg, #10b981, #059669)", color: "white",
             border: "none", fontSize: "14px", fontWeight: 700, cursor: loading ? "wait" : "pointer",
           }}
         >
-          {loading ? "Memuat..." : "Selesai Mengangkut"}
+          {loading ? "Memuat..." : autoAdvanced ? "Auto: Sampah diangkut" : "Selesai Mengangkut"}
         </button>
       </div>
     </div>

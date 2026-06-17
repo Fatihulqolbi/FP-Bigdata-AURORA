@@ -12,6 +12,20 @@ export interface WaypointStop {
   collectedKg: number;
 }
 
+export interface RouteQueueItem {
+  type: "TPS" | "FACILITY";
+  tpsId?: string;
+  tpsName?: string;
+  tpsLat?: number;
+  tpsLng?: number;
+  facilityId?: string;
+  facilityName?: string;
+  facilityLat?: number;
+  facilityLng?: number;
+  collectedKg?: number;
+  status: "pending" | "active" | "done";
+}
+
 export interface TruckData {
   id: string;
   code: string;
@@ -32,6 +46,8 @@ export interface TruckData {
   routeDistance: number | null;
   routeDuration: number | null;
   routeWaypoints: WaypointStop[] | null;
+  routeQueue: RouteQueueItem[] | null;
+  routeLegIndex: number;
 }
 
 export interface TpsData {
@@ -85,6 +101,8 @@ export interface AvailableTruck {
   currentLoadKg: number;
   lat: number | null;
   lng: number | null;
+  currentStatus: string;
+  etaMinutes: number | null;
 }
 
 export interface TaskSuggestion {
@@ -141,6 +159,15 @@ export const fleet = {
   getTaskSuggestions: async (): Promise<TaskSuggestionsResponse> => {
     const token = getToken();
     const res = await fetch(`${API_BASE}/fleet/suggestions`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
+  getAvailableTrucks: async (): Promise<AvailableTruck[]> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/fleet/driver/available-trucks`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

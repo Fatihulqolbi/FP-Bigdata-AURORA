@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { TruckData, TpsData, WaypointStop } from "../api/fleetApi";
+import type { TruckData, TpsData, WaypointStop, RouteQueueItem } from "../api/fleetApi";
 
 interface TruckPanelProps {
   trucks: TruckData[];
@@ -33,6 +33,14 @@ const statusText: Record<string, string> = {
   EN_ROUTE_TO_HUB: "Ke Hub",
   UNLOADING: "Bongkar",
 };
+
+function getPlannedLoad(truck: TruckData): number {
+  const queue = truck.routeQueue as RouteQueueItem[] | null;
+  if (!queue) return truck.currentLoadKg;
+  const pendingTps = queue.filter((l) => l.type === "TPS" && l.status !== "done" && l.collectedKg);
+  const plannedFromQueue = pendingTps.reduce((s, l) => s + (l.collectedKg || 0), 0);
+  return truck.currentLoadKg + plannedFromQueue;
+}
 
 export default function TruckPanel({
   trucks,
@@ -103,9 +111,12 @@ export default function TruckPanel({
           {sortedTrucks.map((truck) => {
             const isSelected = truck.id === selectedTruckId;
             const color = statusColors[truck.status] || "#6b7280";
-            const waypoints = (truck.routeWaypoints as WaypointStop[] | null) || [];
-            const activeWps = waypoints.filter((w) => w.collectedKg > 0);
-            const tpsName = truck.assignedTpsId ? (tpsMap.get(truck.assignedTpsId)?.name || "—") : "—";
+            const queue = (truck.routeQueue as RouteQueueItem[] | null) || [];
+            const tpsLegs = queue.filter((l) => l.type === "TPS");
+            const activeLeg = queue.find((l) => l.status === "active");
+            const pendingLegs = tpsLegs.filter((l) => l.status === "pending");
+            const planned = getPlannedLoad(truck);
+            const hasPlanned = planned > truck.currentLoadKg;
 
             return (
               <div
@@ -127,14 +138,37 @@ export default function TruckPanel({
                   <span style={{ color, fontSize: "8px", fontWeight: 600 }}>{statusText[truck.status]}</span>
                 </div>
                 <div style={{ color: "var(--text-secondary)", fontSize: "9px", lineHeight: 1.3 }}>
-                  {truck.status === "AVAILABLE" && "Depo"}
-                  {truck.status === "EN_ROUTE_TO_TPS" && activeWps.length > 1 && activeWps.map((w) => w.tpsName).join(" → ")}
-                  {truck.status === "EN_ROUTE_TO_TPS" && activeWps.length <= 1 && tpsName}
-                  {truck.status === "EN_ROUTE_TO_HUB" && "→ Hub"}
-                  {(truck.status === "LOADING" || truck.status === "UNLOADING") && tpsName}
+                  {truck.status === "AVAILABLE" && "Menunggu tugas di depo"}
+                  {truck.status === "EN_ROUTE_TO_TPS" && activeLeg && activeLeg.tpsName && (
+                    <span style={{ color: "#60a5fa" }}>
+                      {activeLeg.tpsName}
+                      {pendingLegs.length > 0 && <span style={{ opacity: 0.5 }}> → {pendingLegs.map((l) => l.tpsName).join(" → ")}</span>}
+                    </span>
+                  )}
+                  {truck.status === "EN_ROUTE_TO_HUB" && <span style={{ color: "#a78bfa" }}>→ {activeLeg?.facilityName || "Hub"}</span>}
+                  {(truck.status === "LOADING" || truck.status === "UNLOADING") && <span style={{ color: "#fbbf24" }}>{activeLeg?.tpsName || "TPS"}</span>}
                   {" · "}
-                  {truck.currentLoadKg.toLocaleString()}/{truck.capacityKg.toLocaleString()} kg
+                  <span style={{ color: hasPlanned ? "#60a5fa" : "inherit" }}>
+                    {planned.toLocaleString()} kg
+                  </span>
+                  {hasPlanned && <span style={{ opacity: 0.5, marginLeft: "2px" }}>(+{(planned - truck.currentLoadKg).toLocaleString()})</span>}
+                  <span style={{ opacity: 0.5 }}> / {truck.capacityKg.toLocaleString()} kg</span>
                 </div>
+                {tpsLegs.length > 1 && truck.status !== "AVAILABLE" && (
+                  <div style={{ marginTop: "3px", display: "flex", gap: "3px", flexWrap: "wrap" }}>
+                    {tpsLegs.map((l) => (
+                      <span key={l.tpsId} style={{
+                        padding: "1px 5px", borderRadius: "3px", fontSize: "8px",
+                        background: l.status === "active" ? "rgba(59,130,246,0.2)" : l.status === "done" ? "rgba(16,185,129,0.1)" : "rgba(255,255,255,0.04)",
+                        color: l.status === "active" ? "#3b82f6" : l.status === "done" ? "#10b981" : "var(--text-secondary)",
+                        border: `1px solid ${l.status === "active" ? "rgba(59,130,246,0.3)" : "transparent"}`,
+                      }}>
+                        {l.tpsName && l.tpsName.length > 12 ? l.tpsName.slice(0, 12) + "..." : l.tpsName}
+                        {l.status === "done" && " ✓"}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {truck.routeProgress > 0 && truck.routeProgress < 1 && (
                   <div style={{ marginTop: "3px", height: "2px", background: "rgba(255,255,255,0.05)", borderRadius: "1px" }}>
                     <div style={{ width: `${truck.routeProgress * 100}%`, height: "100%", background: color, borderRadius: "1px", transition: "width 0.3s" }} />

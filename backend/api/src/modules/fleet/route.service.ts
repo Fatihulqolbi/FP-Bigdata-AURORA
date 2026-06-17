@@ -116,7 +116,7 @@ export async function getRoute(
   for (let attempt = 0; attempt < OSRM_SERVERS.length; attempt++) {
     const idx = (currentServerIdx + attempt) % OSRM_SERVERS.length;
     const server = OSRM_SERVERS[idx];
-    const url = `${server}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=false`;
+    const url = `${server}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=3&steps=true`;
     lastUrl = url;
 
     try {
@@ -131,9 +131,17 @@ export async function getRoute(
       }
 
       const data = await res.json() as any;
-      const route = data.routes?.[0];
-      if (!route?.geometry?.coordinates?.length) {
+      const routes = data.routes || [];
+      if (routes.length === 0 || !routes[0]?.geometry?.coordinates?.length) {
         throw new Error("No route geometry in response");
+      }
+
+      // Pick best route: prefer shortest distance among alternatives
+      let bestRoute = routes[0];
+      for (const r of routes.slice(1)) {
+        if (r.geometry?.coordinates?.length > 0 && r.distance < bestRoute.distance) {
+          bestRoute = r;
+        }
       }
 
       // Success — remember this server
@@ -145,9 +153,9 @@ export async function getRoute(
       logRouteStats();
 
       return {
-        geometry: route.geometry,
-        distance: route.distance,
-        duration: route.duration,
+        geometry: bestRoute.geometry,
+        distance: bestRoute.distance,
+        duration: bestRoute.duration,
       };
     } catch (err) {
       lastError = err;
