@@ -1,4 +1,4 @@
-#  AURORA  Sistem Cerdas Manajemen Sampah Kota Surabaya
+#  AURORA - Sistem Cerdas Manajemen Sampah Kota Surabaya
 ### *Adaptive Urban Resource Optimization & Real-time Analytics*
 
 > **Final Project Big Data 2026**  Mata Kuliah Big Data & Data Lakehouse
