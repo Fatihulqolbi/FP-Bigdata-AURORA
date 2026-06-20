@@ -57,3 +57,5 @@ TestSprite/
 *-key.json
 *.pem
 credentials.json
+
+.history
