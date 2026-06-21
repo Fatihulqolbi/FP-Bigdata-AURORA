@@ -55,6 +55,17 @@ Proyek AURORA menangani data yang memiliki karakteristik **5V Big Data** secara 
 | **Value**  | Output analitik menghasilkan nilai nyata: penghematan biaya BBM armada, pencegahan TPS overload, dan optimasi distribusi sampah ke jalur *Circular Economy*. |
 
 ---
+## Tampilan Dahsboard
+<img width="1600" height="808" alt="WhatsApp Image 2026-06-21 at 2 14 40 AM" src="https://github.com/user-attachments/assets/a37f04ea-b8f0-4db3-8154-fd2d6380853b" />
+<img width="1600" height="802" alt="WhatsApp Image 2026-06-21 at 2 14 38 AM" src="https://github.com/user-attachments/assets/b5bb6af1-2a5e-43b2-95d4-ca1cee34fa1a" />
+<img width="1600" height="803" alt="WhatsApp Image 2026-06-21 at 2 14 38 AM (1)" src="https://github.com/user-attachments/assets/8ff45bc4-6fc1-40fe-8202-2743f5decb35" />
+<img width="1600" height="812" alt="WhatsApp Image 2026-06-21 at 2 14 39 AM" src="https://github.com/user-attachments/assets/0c34c6dc-9398-4943-b2aa-1546973bca4d" />
+<img width="1600" height="808" alt="WhatsApp Image 2026-06-21 at 2 14 39 AM (1)" src="https://github.com/user-attachments/assets/03fc5cb4-af80-4c0c-9d78-f0c0d848a252" />
+
+
+
+
+
 
 ## Justifikasi Data Simulasi
 
