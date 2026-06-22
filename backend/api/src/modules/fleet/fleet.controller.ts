@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "../../config/db.js";
 import { getRoute, type GeoJSONLineString, type Coordinate } from "./route.service.js";
 import { checkRouteTraffic } from "./traffic.service.js";
+import { getCriticalTps, getCriticalTpsCount } from "./tps-alert.service.js";
 
 const updateLocationSchema = z.object({
   lat: z.number(),
@@ -229,6 +230,17 @@ export async function getDriverRoute(req: AuthRequest, res: Response) {
         co2Kg,
       },
     });
+  } catch {
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// --- GET /api/fleet/critical-tps ---
+export async function getCriticalTpsHandler(_req: AuthRequest, res: Response) {
+  try {
+    const criticalTps = await getCriticalTps();
+    const counts = await getCriticalTpsCount();
+    res.json({ tps: criticalTps, counts });
   } catch {
     res.status(500).json({ error: "Internal server error" });
   }

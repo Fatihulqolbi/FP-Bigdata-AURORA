@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Marker, Tooltip, Popup } from "react-leaflet";
 import L from "leaflet";
 import WeatherCard from "./WeatherCard";
 import PredictionTable from "./PredictionTable";
+import MetricsDashboard from "../components/MetricsDashboard";
 import type { TpsNode, TruckSim } from "./types";
 import { monitoringApi, type ServiceStatus, type PipelineStats, type PipelineEvent, type FleetStats } from "../api/monitoringApi";
 
@@ -26,6 +27,11 @@ const pltsaIcon = new L.DivIcon({
   className: "pltsa-marker",
 });
 
+const depoIcon = new L.DivIcon({
+  html: `<div style="background-color: #f97316; width: 20px; height: 20px; border-radius: 4px; border: 3px solid white; box-shadow: 0 0 10px #f97316;"></div>`,
+  className: "depo-marker",
+});
+
 const getTruckImageIcon = (type: string, angle: number) => {
   let imgUrl = "/Referensi/3.png";
   if (type === "Arm Roll") imgUrl = "/Referensi/1.png";
@@ -42,16 +48,16 @@ const getTruckImageIcon = (type: string, angle: number) => {
 };
 
 const tps3rData = [
-  { id: 1, name: "Super Depo Sutorejo", pos: [-7.265, 112.795] as [number, number], volume: 11.85, organik: 4.30, kertas: 0.54, plastik: 0.53, bahanLain: 0.56, jumlahDaurUlang: 1.63, jumlahTerolah: 5.93, residu: 5.92 },
-  { id: 2, name: "PDU Jambangan", pos: [-7.315, 112.715] as [number, number], volume: 6.32, organik: 2.19, kertas: 0.21, plastik: 0.51, bahanLain: 0.11, jumlahDaurUlang: 0.83, jumlahTerolah: 3.02, residu: 3.31 },
-  { id: 3, name: "Pemilahan Bratang", pos: [-7.295, 112.765] as [number, number], volume: 1.63, organik: 0.80, kertas: 0.01, plastik: 0.02, bahanLain: 0.00, jumlahDaurUlang: 0.03, jumlahTerolah: 0.83, residu: 0.80 },
-  { id: 4, name: "TPS 3R Tambak Osowilangun", pos: [-7.225, 112.655] as [number, number], volume: 7.77, organik: 3.32, kertas: 0.85, plastik: 0.65, bahanLain: 0.49, jumlahDaurUlang: 1.99, jumlahTerolah: 5.31, residu: 2.46 },
-  { id: 5, name: "TPS 3R Tenggilis", pos: [-7.325, 112.755] as [number, number], volume: 5.24, organik: 1.48, kertas: 0.23, plastik: 0.33, bahanLain: 0.12, jumlahDaurUlang: 0.69, jumlahTerolah: 2.17, residu: 3.07 },
-  { id: 6, name: "TPS 3R Kedung Cowek", pos: [-7.215, 112.785] as [number, number], volume: 3.69, organik: 1.25, kertas: 0.15, plastik: 0.40, bahanLain: 0.11, jumlahDaurUlang: 0.66, jumlahTerolah: 1.90, residu: 1.78 },
-  { id: 7, name: "TPS 3R Gunung Anyar", pos: [-7.335, 112.795] as [number, number], volume: 3.27, organik: 1.35, kertas: 0.01, plastik: 0.20, bahanLain: 0.15, jumlahDaurUlang: 0.37, jumlahTerolah: 1.72, residu: 1.55 },
-  { id: 8, name: "TPS 3R Karang Pilang", pos: [-7.335, 112.695] as [number, number], volume: 2.57, organik: 1.36, kertas: 0.07, plastik: 0.11, bahanLain: 0.08, jumlahDaurUlang: 0.25, jumlahTerolah: 1.62, residu: 0.96 },
-  { id: 9, name: "TPS 3R Waru Gunung", pos: [-7.345, 112.685] as [number, number], volume: 2.40, organik: 1.25, kertas: 0.06, plastik: 0.08, bahanLain: 0.06, jumlahDaurUlang: 0.20, jumlahTerolah: 1.45, residu: 0.95 },
-  { id: 10, name: "TPS 3R Banjarsugihan", pos: [-7.255, 112.665] as [number, number], volume: 3.97, organik: 0.97, kertas: 0.26, plastik: 0.33, bahanLain: 0.32, jumlahDaurUlang: 0.91, jumlahTerolah: 1.88, residu: 2.09 },
+  { id: 1, name: "Super Depo Sutorejo", pos: [-7.258200635257379, 112.79463584020006] as [number, number], volume: 1427.46, organik: 620.5, kertas: 85.3, plastik: 91.2, bahanLain: 54.1, jumlahDaurUlang: 230.6, jumlahTerolah: 691.03, residu: 736.43 },
+  { id: 2, name: "PDU Jambangan", pos: [-7.317395140750365, 112.7167780349453] as [number, number], volume: 2003.66, organik: 870.2, kertas: 120.4, plastik: 145.3, bahanLain: 78.2, jumlahDaurUlang: 343.9, jumlahTerolah: 1370.41, residu: 633.25 },
+  { id: 3, name: "TPS 3R Bratang", pos: [-7.297019176678802, 112.76134199631186] as [number, number], volume: 850.14, organik: 369.3, kertas: 51.2, plastik: 61.8, bahanLain: 33.4, jumlahDaurUlang: 146.4, jumlahTerolah: 470.38, residu: 379.76 },
+  { id: 4, name: "TPS 3R Tambak Osowilangun", pos: [-7.218007331729817, 112.66121751615624] as [number, number], volume: 1175.04, organik: 510.2, kertas: 70.5, plastik: 85.1, bahanLain: 46.0, jumlahDaurUlang: 201.6, jumlahTerolah: 466.03, residu: 709.01 },
+  { id: 5, name: "TPS 3R Tenggilis", pos: [-7.318604453582783, 112.75122082104238] as [number, number], volume: 614.89, organik: 267.0, kertas: 36.9, plastik: 44.6, bahanLain: 24.1, jumlahDaurUlang: 105.6, jumlahTerolah: 390.44, residu: 224.45 },
+  { id: 6, name: "TPS 3R Kedung Cowek", pos: [-7.216586534415317, 112.77885520394545] as [number, number], volume: 675.51, organik: 293.5, kertas: 40.5, plastik: 49.0, bahanLain: 26.5, jumlahDaurUlang: 116.0, jumlahTerolah: 349.17, residu: 326.34 },
+  { id: 7, name: "TPS 3R Gunung Anyar", pos: [-7.3318725835281136, 112.81533555332348] as [number, number], volume: 256.99, organik: 111.6, kertas: 15.4, plastik: 18.6, bahanLain: 10.1, jumlahDaurUlang: 44.1, jumlahTerolah: 135.36, residu: 121.63 },
+  { id: 8, name: "TPS 3R Karang Pilang", pos: [-7.33967817789591, 112.693680915167] as [number, number], volume: 0, organik: 0, kertas: 0, plastik: 0, bahanLain: 0, jumlahDaurUlang: 0, jumlahTerolah: 0, residu: 0 },
+  { id: 9, name: "TPS 3R Waru Gunung", pos: [-7.332807147906473, 112.65990381393213] as [number, number], volume: 2421.12, organik: 1051.7, kertas: 145.3, plastik: 175.5, bahanLain: 94.9, jumlahDaurUlang: 415.7, jumlahTerolah: 1139.32, residu: 1281.80 },
+  { id: 10, name: "TPS 3R Banjarsugihan", pos: [-7.255, 112.665] as [number, number], volume: 0, organik: 0, kertas: 0, plastik: 0, bahanLain: 0, jumlahDaurUlang: 0, jumlahTerolah: 0, residu: 0 },
 ];
 
 const capaianData = [
@@ -76,16 +82,25 @@ const sumberSampahData = [
 // Build resource-flow time-series from total TPS volume (in Ton)
 function buildResourceFlow(tpsTotalKg: number) {
   const hour = new Date().getHours();
-  const slots = [8, 10, 12, 14, 16, 18, 20];
+  const slots = [6, 8, 10, 12, 14, 16, 18, 20];
   const baseTons = Math.round(tpsTotalKg / 1000);
+  
   return slots.map((slotH) => {
     if (slotH > hour) return { time: `${String(slotH).padStart(2, "0")}:00` };
-    const prog = Math.min(1, (slotH - 7) / Math.max(1, hour - 7));
+    
+    const hoursSinceStart = Math.max(0, slotH - 6);
+    const hoursElapsed = Math.max(1, Math.min(hour - 6, 14));
+    const progress = Math.min(1, hoursSinceStart / hoursElapsed);
+    
+    const tpsVolume = Math.round(baseTons * (0.6 + 0.4 * progress));
+    const hubVolume = Math.round(tpsVolume * 0.65);
+    const pltsaVolume = Math.round(tpsVolume * 0.45);
+    
     return {
       time: `${String(slotH).padStart(2, "0")}:00`,
-      tps: Math.round(baseTons * (0.3 + 0.7 * prog)),
-      hub: Math.round(baseTons * 0.6 * prog),
-      optimal: Math.round(baseTons * 0.35 * prog),
+      tps: tpsVolume,
+      hub: hubVolume,
+      pltsa: pltsaVolume,
     };
   });
 }
@@ -268,7 +283,7 @@ export default function RealtimeDashboard({
       <div className="charts-grid">
         <div className="chart-card glass-panel">
           <div className="chart-title" style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            Resource Flow (Sampah → TPS → Hub → Optimal)
+            Resource Flow (TPS → Hub Sortir → PLTSa Benowo)
             {pipelineStats && (
               <span style={{ marginLeft: "auto", fontSize: "11px", color: "var(--text-secondary)" }}>
                 Live • {new Date(lastRefresh).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
@@ -287,7 +302,7 @@ export default function RealtimeDashboard({
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="colorOpt" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorPltsa" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.8} />
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                   </linearGradient>
@@ -301,17 +316,11 @@ export default function RealtimeDashboard({
                     border: "1px solid var(--glass-border)",
                     borderRadius: "8px",
                   }}
+                  formatter={(value: number) => [`${value} Ton`]}
                 />
-                <Area type="monotone" dataKey="tps" name="TPS Transit" stroke="#f59e0b" fillOpacity={1} fill="url(#colorTps)" />
-                <Area type="monotone" dataKey="hub" name="Sorting Hub" stroke="#3b82f6" fillOpacity={1} fill="url(#colorHub)" />
-                <Area
-                  type="monotone"
-                  dataKey="optimal"
-                  name="Fasilitas Optimal (PLTSa/Daur Ulang)"
-                  stroke="#10b981"
-                  fillOpacity={1}
-                  fill="url(#colorOpt)"
-                />
+                <Area type="monotone" dataKey="tps" name="TPS (Akumulasi)" stroke="#f59e0b" fillOpacity={1} fill="url(#colorTps)" />
+                <Area type="monotone" dataKey="hub" name="Hub Sortir" stroke="#3b82f6" fillOpacity={1} fill="url(#colorHub)" />
+                <Area type="monotone" dataKey="pltsa" name="PLTSa Benowo" stroke="#10b981" fillOpacity={1} fill="url(#colorPltsa)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -330,10 +339,6 @@ export default function RealtimeDashboard({
                   outerRadius={60}
                   paddingAngle={5}
                   dataKey="value"
-                  label={({ name, percent }) =>
-                    percent !== undefined ? `${name} (${(percent * 100).toFixed(0)}%)` : name
-                  }
-                  labelLine={false}
                   isAnimationActive={false}
                 >
                   {truckTypePie.map((entry, index) => (
@@ -342,29 +347,26 @@ export default function RealtimeDashboard({
                 </Pie>
                 <RechartsTooltip
                   contentStyle={{ backgroundColor: "var(--bg-dark)", border: "none", borderRadius: "8px" }}
+                  formatter={(value: number, name: string) => [`${value} unit`, name]}
                 />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div style={{ display: "flex", justifyContent: "center", marginTop: "16px", gap: "20px" }}>
-            <div style={{ textAlign: "center" }}>
-              <img src="/Referensi/Dump Truck.png" alt="Dump Truck" style={{ width: "70px", height: "50px", objectFit: "contain", background: "rgba(255,255,255,0.05)", borderRadius: "8px", padding: "4px", border: "1px solid var(--glass-border)" }} />
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "6px" }}>Dump Truck ({truckTypePie[1].value})</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <img src="/Referensi/Compactor.png" alt="Compactor" style={{ width: "70px", height: "50px", objectFit: "contain", background: "rgba(255,255,255,0.05)", borderRadius: "8px", padding: "4px", border: "1px solid var(--glass-border)" }} />
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "6px" }}>Compactor ({truckTypePie[0].value})</div>
-            </div>
-            <div style={{ textAlign: "center" }}>
-              <img src="/Referensi/ArmRoll.png" alt="Arm Roll" style={{ width: "70px", height: "50px", objectFit: "contain", background: "rgba(255,255,255,0.05)", borderRadius: "8px", padding: "4px", border: "1px solid var(--glass-border)" }} />
-              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginTop: "6px" }}>Arm Roll ({truckTypePie[2].value})</div>
-            </div>
+          <div style={{ display: "flex", justifyContent: "center", marginTop: "16px", gap: "20px", flexWrap: "wrap" }}>
+            {truckTypePie.map((item, index) => (
+              <div key={index} style={{ textAlign: "center", display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: item.color }}></div>
+                <span style={{ fontSize: "12px", color: "var(--text-primary)" }}>{item.name}: {item.value} unit</span>
+              </div>
+            ))}
           </div>
           <div style={{ textAlign: "center", fontSize: "12px", color: "var(--text-secondary)", marginTop: "16px" }}>
-            Sumber: Dinas Kebersihan dan Pertamanan, 2025
+            Total: {totalTrucks} unit | Sumber: Dinas Kebersihan dan Pertamanan, 2025
           </div>
         </div>
       </div>
+
+      <MetricsDashboard />
 
       <div className="glass-panel" style={{ padding: "24px", marginTop: "24px", marginBottom: "24px" }}>
         <h3 style={{ fontSize: "18px", marginBottom: "4px", color: "var(--text-primary)" }}>
@@ -504,7 +506,7 @@ export default function RealtimeDashboard({
               <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#fde047", border: "1px solid #450a0a" }}></div> TPS ({pipelineStats ? pipelineStats.tps.total : tpsNodes.length})
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: "#d946ef", border: "1px solid white" }}></div> TPS3R (10)
+              <div style={{ width: "10px", height: "10px", borderRadius: "3px", background: "#f97316" }}></div> Depo Utama DKP
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <div style={{ width: "10px", height: "10px", borderRadius: "3px", background: "#3b82f6" }}></div> Compactor ({truckTypePie[0].value})
@@ -556,6 +558,15 @@ export default function RealtimeDashboard({
                     <strong style={{ color: "#ef4444", fontSize: "14px" }}>PLTSa Benowo</strong>
                     <br />
                     <span style={{ fontSize: "11px", color: "#666" }}>Pusat Pengolahan Utama</span>
+                  </div>
+                </Tooltip>
+              </Marker>
+              <Marker position={[-7.2528236775706105, 112.70581075397124]} icon={depoIcon} zIndexOffset={900}>
+                <Tooltip direction="top" offset={L.point(0, -10)} opacity={1}>
+                  <div style={{ textAlign: "center" }}>
+                    <strong style={{ color: "#f97316", fontSize: "12px" }}>Depo Utama DKP</strong>
+                    <br />
+                    <span style={{ fontSize: "10px", color: "#666" }}>Armada & Rute Pengangkutan</span>
                   </div>
                 </Tooltip>
               </Marker>

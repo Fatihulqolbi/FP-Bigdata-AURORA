@@ -3,6 +3,8 @@ import { AuthRequest } from "../../middleware/auth.js";
 import { prisma } from "../../config/db.js";
 import { z } from "zod";
 import { getRoute, type Coordinate } from "./route.service.js";
+import * as facilityService from "../facility/facility.service.js";
+import { logger } from "../../utils/logger.js";
 
 // Helpers
 function isValidCoord(lat: number | null, lng: number | null): boolean {
@@ -17,13 +19,113 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function getNearestFacility(lat: number, lng: number, facilities: { id: string; name: string; lat: number; lng: number }[]) {
+interface FacilityInfo {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  type?: string;
+  dailyCapacityKg?: number | null;
+  dailyIntakeKg?: number;
+}
+
+/**
+ * Smart facility selection with enhanced logic:
+ * 1. Prefer nearby TPS3R (< 5km) with available capacity
+ * 2. If truck near Benowo, check if TPS3R around Benowo is empty → go there first
+ * 3. If all nearby TPS3R full → PLTSa Benowo
+ * 4. Fallback to PLTSa if no TPS3R available
+ */
+function findBestFacility(lat: number, lng: number, facilities: FacilityInfo[], driverId?: string, truckLoad?: number): FacilityInfo | null {
   if (facilities.length === 0) return null;
-  return facilities.reduce((best, f) => {
-    const d = haversineKm(lat, lng, f.lat, f.lng);
-    const bestD = haversineKm(lat, lng, best.lat, best.lng);
-    return d < bestD ? f : best;
-  }, facilities[0]);
+
+  const NEARBY_RADIUS_KM = 5;
+  const BENOWO_CENTER = { lat: -7.2185, lng: 112.6258 };
+  const BENOWO_RADIUS_KM = 10;
+
+  const ranked = facilities
+    .filter((f) => isValidCoord(f.lat, f.lng))
+    .map((f) => ({
+      ...f,
+      distKm: haversineKm(lat, lng, f.lat, f.lng),
+      distFromBenowo: haversineKm(BENOWO_CENTER.lat, BENOWO_CENTER.lng, f.lat, f.lng),
+    }))
+    .sort((a, b) => a.distKm - b.distKm);
+
+  const pltsa = ranked.find((f) => f.type === "PLTSa");
+  const pltsaDist = pltsa ? pltsa.distKm : Infinity;
+
+  // Check if truck is near Benowo area
+  const truckNearBenowo = haversineKm(lat, lng, BENOWO_CENTER.lat, BENOWO_CENTER.lng) <= BENOWO_RADIUS_KM;
+
+  // 1. Find nearby TPS3R with available capacity (< 120%)
+  const nearbyTps3r = ranked.filter((f) => {
+    if (f.type !== "TPS3R") return false;
+    const dailyCap = f.dailyCapacityKg ?? 50000;
+    const intake = f.dailyIntakeKg ?? 0;
+    const hasCapacity = intake < dailyCap * 1.2;
+    const isNearby = f.distKm <= NEARBY_RADIUS_KM;
+    return hasCapacity && isNearby;
+  });
+
+  if (nearbyTps3r.length > 0) {
+    const selected = nearbyTps3r[0];
+    if (driverId) {
+      logger.info(`[DRIVER] ${driverId} → facility ${selected.name} (TPS3R nearby, ${selected.distKm.toFixed(1)}km, intake: ${((selected.dailyIntakeKg ?? 0) / 1000).toFixed(1)}t / ${((selected.dailyCapacityKg ?? 50000) / 1000).toFixed(0)}t)`);
+    }
+    return selected;
+  }
+
+  // 2. If truck near Benowo, check if TPS3R around Benowo is empty (low intake)
+  if (truckNearBenowo) {
+    const tps3rNearBenowo = ranked.filter((f) => {
+      if (f.type !== "TPS3R") return false;
+      const dailyCap = f.dailyCapacityKg ?? 50000;
+      const intake = f.dailyIntakeKg ?? 0;
+      const isNearBenowo = f.distFromBenowo <= BENOWO_RADIUS_KM;
+      const hasLowIntake = intake < dailyCap * 0.5; // Less than 50% full
+      return isNearBenowo && hasLowIntake;
+    });
+
+    if (tps3rNearBenowo.length > 0) {
+      const selected = tps3rNearBenowo[0];
+      if (driverId) {
+        logger.info(`[DRIVER] ${driverId} → facility ${selected.name} (TPS3R near Benowo, low intake, ${selected.distKm.toFixed(1)}km)`);
+      }
+      return selected;
+    }
+  }
+
+  // 3. Check any TPS3R within 2x distance of PLTSa
+  const tps3rAvailable = ranked.filter((f) => {
+    if (f.type !== "TPS3R") return false;
+    const dailyCap = f.dailyCapacityKg ?? 50000;
+    const intake = f.dailyIntakeKg ?? 0;
+    return intake < dailyCap * 1.2;
+  });
+
+  if (tps3rAvailable.length > 0 && tps3rAvailable[0].distKm <= pltsaDist * 2) {
+    const selected = tps3rAvailable[0];
+    if (driverId) {
+      logger.info(`[DRIVER] ${driverId} → facility ${selected.name} (TPS3R within 2x PLTSa distance, ${selected.distKm.toFixed(1)}km)`);
+    }
+    return selected;
+  }
+
+  // 4. Fallback: PLTSa (always available)
+  if (pltsa) {
+    if (driverId) {
+      logger.info(`[DRIVER] ${driverId} → facility ${pltsa.name} (PLTSa fallback, ${pltsa.distKm.toFixed(1)}km, all nearby TPS3R full or too far)`);
+    }
+    return pltsa;
+  }
+
+  // Last resort: any facility
+  const fallback = ranked[0];
+  if (driverId && fallback) {
+    logger.info(`[DRIVER] ${driverId} → facility ${fallback.name} (${fallback.type}, last resort)`);
+  }
+  return fallback;
 }
 
 interface RouteQueueItem {
@@ -127,9 +229,10 @@ export async function claimTruck(req: AuthRequest, res: Response) {
 
     const truck = await prisma.truck.update({
       where: { id: available.id },
-      data: { driverId: user.id },
+      data: { driverId: user.id, status: "ASSIGNED" },
     });
 
+    logger.info(`[DRIVER] ${user.name} claimed truck ${truck.code}`);
     res.json({ success: true, truck });
   } catch (err: any) {
     console.error("[DRIVER] claimTruck error:", err.message);
@@ -218,7 +321,7 @@ export async function getAssignment(req: AuthRequest, res: Response) {
 }
 
 // --- POST /api/fleet/driver/start ---
-// Driver presses "Gas Berangkat" — find TPS + create route queue
+// Driver presses "Gas Berangkat" — build multi-TPS route queue with smart facility selection
 export async function startRoute(req: AuthRequest, res: Response) {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
@@ -226,8 +329,8 @@ export async function startRoute(req: AuthRequest, res: Response) {
 
     const truck = await prisma.truck.findFirst({ where: { driverId: user.id } });
     if (!truck) { res.status(404).json({ error: "Truk belum di-assign" }); return; }
-    if (truck.status !== "AVAILABLE") {
-      res.status(400).json({ error: "Truk tidak dalam status available" });
+    if (truck.status !== "AVAILABLE" && truck.status !== "ASSIGNED") {
+      res.status(400).json({ error: `Truk tidak dalam status available (status: ${truck.status})` });
       return;
     }
 
@@ -239,7 +342,6 @@ export async function startRoute(req: AuthRequest, res: Response) {
       })).map((t) => t.assignedTpsId!)
     );
 
-    const threshold = 0.5;
     const activeTps = await prisma.tps.findMany({
       where: { needsReview: false, status: { not: "NONAKTIF" }, currentVolume: { gt: 0 } },
     });
@@ -248,34 +350,136 @@ export async function startRoute(req: AuthRequest, res: Response) {
     const truckPos = isValidCoord(truck.lat, truck.lng)
       ? { lat: truck.lat!, lng: truck.lng! }
       : { lat: -7.2185, lng: 112.6258 };
-    const candidates = activeTps
-      .filter((t) => {
-        const fill = t.capacityKg > 0 ? t.currentVolume / t.capacityKg : 0;
-        const dist = haversineKm(truckPos.lat, truckPos.lng, t.lat, t.lng);
-        const thresholdDist = dist < 3 ? 0.75 : 0.50;
-        return fill >= thresholdDist && !assignedTpsIds.has(t.id);
-      })
-      .sort((a, b) => {
-        const fa = a.capacityKg > 0 ? a.currentVolume / a.capacityKg : 0;
-        const fb = b.capacityKg > 0 ? b.currentVolume / b.capacityKg : 0;
-        return fb - fa;
-      });
-
-    const tps = candidates[0];
-    if (!tps) { res.status(404).json({ error: "Tidak ada TPS yang perlu dijemput" }); return; }
 
     // Build route queue
-    const nearestFac = getNearestFacility(tps.lat, tps.lng, facilities);
-    const queue: RouteQueueItem[] = [
-      { type: "TPS", tpsId: tps.id, tpsName: tps.name, tpsLat: tps.lat, tpsLng: tps.lng,
-        collectedKg: Math.min(tps.currentVolume, truck.capacityKg), status: "active" },
-    ];
-    if (nearestFac) {
-      queue.push({ type: "FACILITY", facilityId: nearestFac.id, facilityName: nearestFac.name,
-        facilityLat: nearestFac.lat, facilityLng: nearestFac.lng, status: "pending" });
+    const queue: RouteQueueItem[] = [];
+    let remaining = truck.capacityKg;
+    let currentPos = truckPos;
+    const visited = new Set<string>();
+
+    // PRIORITY 1: Use assigned task if exists (admin already dispatched)
+    if (truck.assignedTpsId) {
+      const assignedTps = await prisma.tps.findUnique({ where: { id: truck.assignedTpsId } });
+      if (assignedTps && assignedTps.status !== "NONAKTIF" && assignedTps.currentVolume > 0) {
+        const collect = Math.min(assignedTps.currentVolume, remaining);
+        queue.push({
+          type: "TPS", tpsId: assignedTps.id, tpsName: assignedTps.name,
+          tpsLat: assignedTps.lat, tpsLng: assignedTps.lng,
+          collectedKg: Math.round(collect * 100) / 100,
+          status: "active",
+        });
+        visited.add(assignedTps.id);
+        assignedTpsIds.add(assignedTps.id);
+        remaining -= collect;
+        currentPos = { lat: assignedTps.lat, lng: assignedTps.lng };
+        logger.info(`[DRIVER] ${truck.code} using assigned task: ${assignedTps.name}`);
+      }
     }
 
-    const route = await getRoute(truckPos, { lat: tps.lat, lng: tps.lng });
+    // PRIORITY 2: Auto-search additional TPS if capacity available (multi-TPS)
+    const CLOSE_DISTANCE_KM = 3;
+    const FILL_THRESHOLD_CLOSE = 0.75;
+    const FILL_THRESHOLD_FAR = 0.50;
+    const MAX_ROUTE_QUEUE = 5;
+
+    const scoreTps = (tps: { fill: number; distanceKm: number }, truckType: string): number => {
+      const FUEL_EFF: Record<string, number> = { COMPACTOR: 8, DUMP_TRUCK: 6, ARM_ROLL: 7 };
+      const fuelEff = FUEL_EFF[truckType] || 7;
+      const fuelCost = (tps.distanceKm / fuelEff) * 24800;
+      const emission = (tps.distanceKm / fuelEff) * 2.68;
+      const fillScore = tps.fill;
+      const distScore = tps.distanceKm > 0 ? Math.min(1, 3 / tps.distanceKm) : 0;
+      const fuelScore = fuelCost > 0 ? Math.min(1, 30000 / fuelCost) : 1;
+      const emScore = emission > 0 ? Math.min(1, 5 / emission) : 1;
+      return fillScore * 0.40 + distScore * 0.35 + fuelScore * 0.15 + emScore * 0.10;
+    };
+
+    const scoredTps = activeTps
+      .filter((t) => isValidCoord(t.lat, t.lng))
+      .filter((t) => !assignedTpsIds.has(t.id) && !visited.has(t.id))
+      .map((t) => {
+        const fill = t.capacityKg > 0 ? t.currentVolume / t.capacityKg : 0;
+        const distanceKm = haversineKm(currentPos.lat, currentPos.lng, t.lat, t.lng);
+        const score = scoreTps({ fill, distanceKm }, truck.type);
+        return { ...t, fill, distanceKm, score };
+      })
+      .filter((t) => {
+        const threshold = t.distanceKm < CLOSE_DISTANCE_KM ? FILL_THRESHOLD_CLOSE : FILL_THRESHOLD_FAR;
+        return t.fill >= threshold && t.currentVolume > 0;
+      })
+      .sort((a, b) => b.score - a.score);
+
+    // Add more TPS if capacity available (nearest-neighbor chaining)
+    while (queue.length < MAX_ROUTE_QUEUE && remaining > 0 && scoredTps.length > 0) {
+      const next = scoredTps
+        .filter((t) => !visited.has(t.id) && t.currentVolume > 0)
+        .map((t) => ({ ...t, distFromCurrent: haversineKm(currentPos.lat, currentPos.lng, t.lat, t.lng) }))
+        .sort((a, b) => {
+          const aS = a.score * 0.6 + (Math.min(1, 2 / (a.distFromCurrent + 0.1)) * 0.4);
+          const bS = b.score * 0.6 + (Math.min(1, 2 / (b.distFromCurrent + 0.1)) * 0.4);
+          return bS - aS;
+        })[0];
+
+      if (!next) break;
+      const collect = Math.min(next.currentVolume, remaining);
+      if (collect <= 0) break;
+
+      queue.push({
+        type: "TPS", tpsId: next.id, tpsName: next.name,
+        tpsLat: next.lat, tpsLng: next.lng,
+        collectedKg: Math.round(collect * 100) / 100,
+        status: queue.length === 0 ? "active" : "pending",
+      });
+      visited.add(next.id);
+      assignedTpsIds.add(next.id);
+      remaining -= collect;
+      currentPos = { lat: next.lat, lng: next.lng };
+    }
+
+    if (queue.length === 0) { res.status(404).json({ error: "Tidak ada TPS yang perlu dijemput" }); return; }
+
+    const first = queue[0];
+
+    // Pick more TPS (nearest-neighbor chaining)
+    while (queue.length < MAX_ROUTE_QUEUE && remaining > 0) {
+      const next = scoredTps
+        .filter((t) => !visited.has(t.id) && t.currentVolume > 0)
+        .map((t) => ({ ...t, distFromCurrent: haversineKm(currentPos.lat, currentPos.lng, t.lat, t.lng) }))
+        .sort((a, b) => {
+          const aS = a.score * 0.6 + (Math.min(1, 2 / (a.distFromCurrent + 0.1)) * 0.4);
+          const bS = b.score * 0.6 + (Math.min(1, 2 / (b.distFromCurrent + 0.1)) * 0.4);
+          return bS - aS;
+        })[0];
+
+      if (!next) break;
+      const collect = Math.min(next.currentVolume, remaining);
+      if (collect <= 0) break;
+
+      queue.push({
+        type: "TPS", tpsId: next.id, tpsName: next.name,
+        tpsLat: next.lat, tpsLng: next.lng,
+        collectedKg: Math.round(collect * 100) / 100,
+        status: "pending",
+      });
+      visited.add(next.id);
+      assignedTpsIds.add(next.id);
+      remaining -= collect;
+      currentPos = { lat: next.lat, lng: next.lng };
+    }
+
+    // Add facility as last leg — use smart selection (TPS3R if closer + capacity, else PLTSa)
+    const lastStop = queue[queue.length - 1];
+    const facility = findBestFacility(lastStop.tpsLat!, lastStop.tpsLng!, facilities, user.id);
+    if (facility) {
+      queue.push({
+        type: "FACILITY", facilityId: facility.id, facilityName: facility.name,
+        facilityLat: facility.lat, facilityLng: facility.lng,
+        status: "pending",
+      });
+    }
+
+    // Build route to first TPS
+    const route = await getRoute(truckPos, { lat: first.tpsLat!, lng: first.tpsLng! });
     const heading = route.geometry.coordinates.length >= 2
       ? Math.atan2(
           route.geometry.coordinates[1][0] - route.geometry.coordinates[0][0],
@@ -287,10 +491,10 @@ export async function startRoute(req: AuthRequest, res: Response) {
       where: { id: truck.id },
       data: {
         status: "EN_ROUTE_TO_TPS",
-        assignedTpsId: tps.id,
-        destinationLat: tps.lat,
-        destinationLng: tps.lng,
-        facilityId: nearestFac?.id,
+        assignedTpsId: first.tpsId,
+        destinationLat: first.tpsLat,
+        destinationLng: first.tpsLng,
+        facilityId: facility?.id,
         route: route.geometry as any,
         routeProgress: 0,
         routeDistance: route.distance,
@@ -302,6 +506,7 @@ export async function startRoute(req: AuthRequest, res: Response) {
       },
     });
 
+    logger.info(`[DRIVER] ${truck.code} started multi-TPS route: ${queue.filter(l => l.type === "TPS").length} TPS stops + 1 facility`);
     res.json({ success: true, truck: updated, queue });
   } catch (err: any) {
     console.error("[DRIVER] startRoute error:", err.message);
@@ -322,12 +527,26 @@ export async function arriveAtTps(req: AuthRequest, res: Response) {
       return;
     }
 
+    // Get current leg from routeQueue to find expected collect amount
+    const queue = (truck.routeQueue as unknown as RouteQueueItem[]) || [];
+    const activeLeg = queue.find((l) => l.status === "active");
+    const collectedKg = activeLeg?.collectedKg || 0;
+
+    // Calculate loading duration based on collected weight
+    // Formula: (collectedKg / 5000) * 60 seconds (5 ton per minute)
+    // Min 30s, Max 600s (10 min)
+    const loadingDuration = Math.max(30, Math.min(600, Math.round((collectedKg / 5000) * 60)));
+
     const updated = await prisma.truck.update({
       where: { id: truck.id },
-      data: { status: "LOADING", routeProgress: 1.0 },
+      data: { 
+        status: "LOADING", 
+        routeProgress: 1.0,
+      },
     });
 
-    res.json({ success: true, truck: updated });
+    logger.info(`[DRIVER] ${truck.code} arrived at TPS, loading ${collectedKg}kg, estimated duration: ${loadingDuration}s`);
+    res.json({ success: true, truck: updated, loadingDuration, collectedKg });
   } catch (err: any) {
     console.error("[DRIVER] arriveAtTps error:", err.message);
     res.status(500).json({ error: "Internal server error" });
@@ -348,6 +567,60 @@ export async function startLoading(req: AuthRequest, res: Response) {
     console.error("[DRIVER] startLoading error:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
+}
+
+// --- HELPER: Find next TPS in queue or nearby TPS ---
+async function findNextTps(truck: any, queue: RouteQueueItem[], truckPos: { lat: number; lng: number }): Promise<RouteQueueItem | null> {
+  // Check if there's pending TPS in queue
+  const pendingTps = queue.filter((l) => l.type === "TPS" && l.status === "pending");
+  if (pendingTps.length > 0) {
+    logger.info(`[DRIVER] ${truck.code} has ${pendingTps.length} pending TPS in queue`);
+    return pendingTps[0];
+  }
+
+  // If no pending TPS in queue, check if truck can carry more
+  const remaining = truck.capacityKg - truck.currentLoadKg;
+  if (remaining <= 500) {
+    logger.info(`[DRIVER] ${truck.code} truck near capacity (${truck.currentLoadKg}/${truck.capacityKg}kg), go to facility`);
+    return null;
+  }
+
+  // Find nearby TPS (5km radius) that truck can still carry
+  const assignedTpsIds = new Set(
+    queue.filter((l) => l.type === "TPS" && l.tpsId).map((l) => l.tpsId!)
+  );
+
+  const activeTps = await prisma.tps.findMany({
+    where: { needsReview: false, status: { not: "NONAKTIF" }, currentVolume: { gt: 0 } },
+  });
+
+  const nearby = activeTps
+    .filter((t) => !assignedTpsIds.has(t.id) && isValidCoord(t.lat, t.lng))
+    .map((t) => ({
+      ...t,
+      distKm: haversineKm(truckPos.lat, truckPos.lng, t.lat, t.lng),
+      fill: t.capacityKg > 0 ? t.currentVolume / t.capacityKg : 0,
+    }))
+    .filter((t) => t.distKm <= 5)
+    .sort((a, b) => b.fill - a.fill);
+
+  if (nearby.length > 0) {
+    const selected = nearby[0];
+    const collect = Math.min(selected.currentVolume, remaining);
+    logger.info(`[DRIVER] ${truck.code} found nearby TPS: ${selected.name} (${selected.distKm.toFixed(1)}km, can collect ${collect}kg)`);
+    return {
+      type: "TPS",
+      tpsId: selected.id,
+      tpsName: selected.name,
+      tpsLat: selected.lat,
+      tpsLng: selected.lng,
+      collectedKg: collect,
+      status: "pending",
+    };
+  }
+
+  logger.info(`[DRIVER] ${truck.code} no nearby TPS found, go to facility`);
+  return null;
 }
 
 // --- POST /api/fleet/driver/complete ---
@@ -383,7 +656,7 @@ export async function completeLoading(req: AuthRequest, res: Response) {
     if (!currentTpsId) {
       // No TPS info — just advance to facility or reset
       const facilities = await prisma.sortingHub.findMany();
-      const facility = getNearestFacility(
+      const facility = findBestFacility(
         isValidCoord(truck.lat, truck.lng) ? truck.lat! : -7.2185,
         isValidCoord(truck.lat, truck.lng) ? truck.lng! : 112.6258,
         facilities
@@ -480,7 +753,7 @@ export async function completeLoading(req: AuthRequest, res: Response) {
       const lastStop = queue[queue.length - 1];
       const lastLat = lastStop?.tpsLat || (isValidCoord(truck.lat, truck.lng) ? truck.lat! : -7.2185);
       const lastLng = lastStop?.tpsLng || truck.lng || 112.6258;
-      const nearestFac = getNearestFacility(lastLat, lastLng, facilities);
+      const nearestFac = findBestFacility(lastLat, lastLng, facilities, user.id);
       if (nearestFac) {
         queue.push({
           type: "FACILITY", facilityId: nearestFac.id, facilityName: nearestFac.name,
@@ -576,7 +849,7 @@ export async function autoAdvance(req: AuthRequest, res: Response) {
     const lastStop = queue[queue.length - 1];
     const lastLat = lastStop?.tpsLat || (isValidCoord(truck.lat, truck.lng) ? truck.lat! : -7.2185);
     const lastLng = lastStop.tpsLng || truck.lng || 112.6258;
-    const nearestFac = getNearestFacility(lastLat, lastLng, facilities);
+    const nearestFac = findBestFacility(lastLat, lastLng, facilities, user.id);
 
     if (nearestFac) {
     const origin = { lat: isValidCoord(truck.lat, truck.lng) ? truck.lat! : -7.2185, lng: isValidCoord(truck.lat, truck.lng) ? truck.lng! : 112.6258 };
@@ -621,12 +894,18 @@ export async function arriveAtHub(req: AuthRequest, res: Response) {
       return;
     }
 
+    // Calculate unloading duration: 2-3 minutes base, +1 min per 10 ton
+    // Formula: 120s base + (currentLoadKg / 10000) * 60s, max 600s
+    const baseUnloadTime = 120;
+    const unloadingDuration = Math.min(600, Math.round(baseUnloadTime + (truck.currentLoadKg / 10000) * 60));
+
     const updated = await prisma.truck.update({
       where: { id: truck.id },
       data: { status: "UNLOADING", routeProgress: 1.0 },
     });
 
-    res.json({ success: true, truck: updated });
+    logger.info(`[DRIVER] ${truck.code} arrived at facility, unloading ${truck.currentLoadKg}kg, estimated duration: ${unloadingDuration}s`);
+    res.json({ success: true, truck: updated, unloadingDuration, currentLoadKg: truck.currentLoadKg });
   } catch (err: any) {
     console.error("[DRIVER] arriveAtHub error:", err.message);
     res.status(500).json({ error: "Internal server error" });
@@ -634,6 +913,7 @@ export async function arriveAtHub(req: AuthRequest, res: Response) {
 }
 
 // --- POST /api/fleet/driver/unload ---
+// Driver finishes unloading at facility, routes to nearest depot
 export async function unloadAtHub(req: AuthRequest, res: Response) {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
@@ -642,20 +922,201 @@ export async function unloadAtHub(req: AuthRequest, res: Response) {
     const truck = await prisma.truck.findFirst({ where: { driverId: user.id } });
     if (!truck) { res.status(404).json({ error: "Truk tidak ditemukan" }); return; }
 
+    // Update facility intake if truck has load and facility assigned
+    if (truck.facilityId && truck.currentLoadKg > 0) {
+      await facilityService.addIntake(truck.facilityId, truck.currentLoadKg);
+      logger.info(`[DRIVER] ${truck.code} unloaded ${Math.round(truck.currentLoadKg)} kg at facility`);
+    }
+
+    // Fetch depots from database
+    const depots = await prisma.sortingHub.findMany({ where: { type: "DEPOT" } });
+    
+    // Fallback to hardcoded if no depots in DB
+    const DEPOTS = depots.length > 0 
+      ? depots.map((d) => ({ name: d.name, lat: d.lat, lng: d.lng }))
+      : [
+          { name: "PLTSa Benowo", lat: -7.2185017137913645, lng: 112.6258223434186 },
+          { name: "DLH Surabaya", lat: -7.278405714355262, lng: 112.76320233999931 },
+          { name: "Depo Utara", lat: -7.2100, lng: 112.7300 },
+          { name: "Depo Selatan", lat: -7.3000, lng: 112.7300 },
+        ];
+
+    // Find nearest depot
+    const truckPos = isValidCoord(truck.lat, truck.lng)
+      ? { lat: truck.lat!, lng: truck.lng! }
+      : { lat: -7.2185, lng: 112.6258 };
+
+    const nearestDepot = DEPOTS.reduce((best, d) => {
+      const bestDist = haversineKm(truckPos.lat, truckPos.lng, best.lat, best.lng);
+      const dist = haversineKm(truckPos.lat, truckPos.lng, d.lat, d.lng);
+      return dist < bestDist ? d : best;
+    }, DEPOTS[0]);
+
+    // Get route to nearest depot
+    const route = await getRoute(truckPos, { lat: nearestDepot.lat, lng: nearestDepot.lng });
+    const heading = route.geometry.coordinates.length >= 2
+      ? Math.atan2(
+          route.geometry.coordinates[1][0] - route.geometry.coordinates[0][0],
+          route.geometry.coordinates[1][1] - route.geometry.coordinates[0][1]
+        ) * 180 / Math.PI
+      : 0;
+
+    const updated = await prisma.truck.update({
+      where: { id: truck.id },
+      data: {
+        status: "EN_ROUTE_TO_DEPOT",
+        route: route.geometry as any,
+        routeProgress: 0,
+        routeDistance: route.distance,
+        routeDuration: route.duration,
+        destinationLat: nearestDepot.lat,
+        destinationLng: nearestDepot.lng,
+        heading: heading < 0 ? heading + 360 : heading,
+        routeQueue: null,
+        routeLegIndex: 0,
+        assignedTpsId: null,
+        facilityId: null,
+        currentLoadKg: 0,
+      },
+    });
+
+    logger.info(`[DRIVER] ${truck.code} routing to nearest depot (${nearestDepot.name})`);
+    res.json({ success: true, truck: updated, depot: nearestDepot });
+  } catch (err: any) {
+    console.error("[DRIVER] unloadAtHub error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// --- POST /api/fleet/driver/arrive-depot ---
+// Driver arrives at depot, status = AVAILABLE
+export async function arriveAtDepot(req: AuthRequest, res: Response) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+    const truck = await prisma.truck.findFirst({ where: { driverId: user.id } });
+    if (!truck) { res.status(404).json({ error: "Truk tidak ditemukan" }); return; }
+    if (truck.status !== "EN_ROUTE_TO_DEPOT") {
+      res.status(400).json({ error: "Truk tidak sedang menuju depot" });
+      return;
+    }
+
     const updated = await prisma.truck.update({
       where: { id: truck.id },
       data: {
         status: "AVAILABLE",
-        route: null, routeProgress: 0, routeDistance: null, routeDuration: null,
-        routeQueue: null, routeLegIndex: 0,
-        assignedTpsId: null, destinationLat: null, destinationLng: null,
-        facilityId: null, currentLoadKg: 0, heading: 0,
+        route: null,
+        routeProgress: 0,
+        routeDistance: null,
+        routeDuration: null,
+        destinationLat: null,
+        destinationLng: null,
+        heading: 0,
       },
     });
 
+    logger.info(`[DRIVER] ${truck.code} arrived at depot, status AVAILABLE`);
     res.json({ success: true, truck: updated });
   } catch (err: any) {
-    console.error("[DRIVER] unloadAtHub error:", err.message);
+    console.error("[DRIVER] arriveAtDepot error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// --- POST /api/fleet/driver/generate-backup-code ---
+// Generate backup code for manual arrival verification (admin/hub use)
+export async function generateBackupCode(req: AuthRequest, res: Response) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+    const truck = await prisma.truck.findFirst({ where: { driverId: user.id } });
+    if (!truck) { res.status(404).json({ error: "Truk tidak ditemukan" }); return; }
+
+    // Generate unique alphanumeric code (6 characters)
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let code = "";
+    for (let i = 0; i < 6; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    const updated = await prisma.truck.update({
+      where: { id: truck.id },
+      data: {
+        backupCode: code,
+        backupCodeGeneratedAt: new Date(),
+      },
+    });
+
+    logger.info(`[DRIVER] ${truck.code} generated backup code: ${code}`);
+    res.json({ success: true, backupCode: code, generatedAt: updated.backupCodeGeneratedAt });
+  } catch (err: any) {
+    console.error("[DRIVER] generateBackupCode error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
+}
+
+// --- POST /api/fleet/driver/backup-arrive ---
+// Manual arrival verification using backup code (when GPS fails)
+export async function backupArrive(req: AuthRequest, res: Response) {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.user!.userId } });
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+
+    const { backupCode } = req.body;
+    if (!backupCode || typeof backupCode !== "string") {
+      res.status(400).json({ error: "backupCode required" });
+      return;
+    }
+
+    const truck = await prisma.truck.findFirst({ where: { driverId: user.id } });
+    if (!truck) { res.status(404).json({ error: "Truk tidak ditemukan" }); return; }
+
+    // Verify backup code
+    if (truck.backupCode !== backupCode.toUpperCase()) {
+      res.status(400).json({ error: "Kode backup tidak valid" });
+      return;
+    }
+
+    // Check if code is expired (24 hours)
+    const CODE_EXPIRY_HOURS = 24;
+    const generatedAt = truck.backupCodeGeneratedAt;
+    if (generatedAt) {
+      const hoursSinceGenerated = (Date.now() - generatedAt.getTime()) / (1000 * 60 * 60);
+      if (hoursSinceGenerated > CODE_EXPIRY_HOURS) {
+        res.status(400).json({ error: "Kode backup sudah kedaluwarsa" });
+        return;
+      }
+    }
+
+    // Set status based on current status
+    let newStatus: string;
+    if (truck.status === "EN_ROUTE_TO_TPS") {
+      newStatus = "LOADING";
+    } else if (truck.status === "EN_ROUTE_TO_HUB") {
+      newStatus = "UNLOADING";
+    } else if (truck.status === "EN_ROUTE_TO_DEPOT") {
+      newStatus = "AVAILABLE";
+    } else {
+      res.status(400).json({ error: `Tidak bisa menggunakan backup arrive di status ${truck.status}` });
+      return;
+    }
+
+    const updated = await prisma.truck.update({
+      where: { id: truck.id },
+      data: {
+        status: newStatus,
+        routeProgress: 1.0,
+        backupCode: null,
+        backupCodeGeneratedAt: null,
+      },
+    });
+
+    logger.info(`[DRIVER] ${truck.code} used backup code to arrive, status: ${newStatus}`);
+    res.json({ success: true, truck: updated, message: `Status diubah ke ${newStatus}` });
+  } catch (err: any) {
+    console.error("[DRIVER] backupArrive error:", err.message);
     res.status(500).json({ error: "Internal server error" });
   }
 }

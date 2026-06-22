@@ -72,6 +72,25 @@ export interface FacilityData {
   lng: number;
   capacityKg: number;
   currentLoadKg: number;
+  dailyCapacityKg: number | null;
+  dailyIntakeKg: number;
+  intakePct: number | null;
+  loadPct: number;
+  alertStatus: "NORMAL" | "WARNING" | "CRITICAL";
+  acceptsTypes: string[];
+}
+
+export interface CriticalTps {
+  id: string;
+  code: string;
+  name: string;
+  kecamatan: string;
+  lat: number;
+  lng: number;
+  currentVolume: number;
+  capacityKg: number;
+  fillPct: number;
+  alertLevel: "WARNING" | "CRITICAL";
 }
 
 export interface FleetStatus {
@@ -89,7 +108,8 @@ export interface FleetUpdate {
   trucks?: TruckData[];
   tps?: TpsData[];
   facilities?: FacilityData[];
-  criticalTps?: { id: string; code: string; name: string; fill: string }[];
+  allFacilities?: FacilityData[];
+  criticalTps?: CriticalTps[];
   timestamp: string;
 }
 
@@ -184,5 +204,100 @@ export const fleet = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
+  },
+
+  getCriticalTps: async (): Promise<{ tps: CriticalTps[]; counts: { warning: number; critical: number; total: number } }> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/fleet/critical-tps`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
+  generateBackupCode: async (): Promise<{ success: boolean; backupCode: string; generatedAt: string }> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/fleet/driver/generate-backup-code`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+
+  backupArrive: async (backupCode: string): Promise<{ success: boolean; truck: TruckData; message: string }> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/fleet/driver/backup-arrive`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ backupCode }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+
+  arriveAtDepot: async (): Promise<{ success: boolean; truck: TruckData }> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/fleet/driver/arrive-depot`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+};
+
+export const facility = {
+  listFacilities: async (): Promise<{ facilities: FacilityData[]; total: number }> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/facility`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
+  getFacilityById: async (id: string): Promise<FacilityData> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/facility/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
+  },
+
+  updateCapacity: async (id: string, dailyCapacityKg: number | null): Promise<FacilityData> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/facility/${id}/capacity`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ dailyCapacityKg }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+
+  resetIntake: async (id: string): Promise<FacilityData> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/facility/${id}/reset-intake`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
+
+  getAlerts: async (): Promise<{ alerts: FacilityData[]; total: number }> => {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/facility/alerts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json();
   },
 };

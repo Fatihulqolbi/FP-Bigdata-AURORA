@@ -95,19 +95,7 @@ export default function UserManagement() {
     } catch { toast.error("Koneksi gagal"); }
   };
 
-  const handleDelete = async (userId: string, name: string) => {
-    if (!confirm(`Yakin suspend user "${name}"?`)) return;
-    try {
-      const res = await fetch(`${API_BASE}/auth/admin/users/${userId}`, {
-        method: "DELETE", headers,
-      });
-      if (res.ok) {
-        toast.success(`User ${name} di-suspend`);
-        fetchUsers();
-        fetchStats();
-      }
-    } catch { toast.error("Koneksi gagal"); }
-  };
+
 
   const handleCreate = async (data: { name: string; email: string; password: string; role: string; status: string }) => {
     try {

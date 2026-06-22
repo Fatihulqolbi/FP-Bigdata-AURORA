@@ -1,320 +1,201 @@
-# AURORA — Compact Context Document
+# AURORA — Compact Change Log (Full Session)
 
-## Project Overview
-**AURORA** is a Surabaya Smart Waste Management & Big Data Pipeline platform.  
-**Stack:** React + TypeScript (Vite), Node.js + Express + Prisma (MongoDB), Apache Kafka, Spark Streaming, HDFS, OSRM routing.
-
-**Repo:** `D:\Github\FP-Bigdata-AURORA`  
-**Backend:** `D:\Github\FP-Bigdata-AURORA\backend\api` — `npx tsx src/index.ts` (port 4000)  
-**Frontend:** `D:\Github\FP-Bigdata-AURORA\dashboard` — `npm run dev` (port 5173)  
-**MongoDB:** localhost:27017, database `aurora_marketplace`  
-**All demo passwords:** `password123`  
-**Admin:** `admin@aurora.go.id`
+## Status: M4 COMPLETE, M5 (Polishing) In Progress
 
 ---
 
-## Architecture
+## 1. Perubahan Terakhir (Sesi Ini)
 
+### 1.1 Warna Marker TPS3R & PLTSa
+
+**File:** `dashboard/src/features/fleet/components/FleetMap.tsx`
+
+- **TPS3R** → biru (`#3b82f6`)
+- **PLTSa Benowo** → merah (`#ef4444`)
+- **TPS3R penuh (>80%)** → oranye (`#f59e0b`)
+- Menggunakan `SortingHub` (facility) dari `fleet.sse.ts`
+
+```tsx
+// Facility Markers
+{facilities.map((f) => {
+  const isPltsa = f.type === "PLTSa";
+  const isTps3r = f.type === "TPS3R";
+  const isFull = f.capacityKg > 0 && f.currentLoadKg >= f.capacityKg * 0.8;
+  const icon = isPltsa ? pltsaIcon : (isTps3r && isFull) ? tps3rFullIcon : facilityIcon;
+  ...
+})}
 ```
-IoT/TPS → Kafka → Spark Streaming → HDFS (Parquet)
-                ↓
-        Backend API (Express + Prisma + MongoDB)
-                ↓
-        Frontend (React + Leaflet + Recharts)
-                ↓
-        OSRM Routing Engine (public: router.project-osrm.org)
-                ↓
-        TomTom Traffic API (congestion detection)
+
+### 1.2 Backend: Kirim `allFacilities` via SSE
+
+**File:** `backend/api/src/modules/fleet/fleet.sse.ts`
+
+```typescript
+// SSE init sekarang mengirim semua SortingHub
+const [trucks, tpsList, allFacilities] = await Promise.all([
+  prisma.truck.findMany({...}),
+  prisma.tps.findMany({...}),
+  prisma.sortingHub.findMany(), // ← TAMBAHAN BARU
+]);
+res.write(`data: ${JSON.stringify({ type: "init", trucks, tps: tpsList, facilities, allFacilities })}\n\n`);
 ```
 
----
+### 1.3 Frontend FleetApi + useFleetStream
 
-## Roles & Access
-
-| Role | Sidebar Tabs | Description |
-|---|---|---|
-| ADMIN | Realtime Monitor, Armada & Rute, Sorting Hub, Data Pipeline, Manajemen TPS, Manajemen Akun, Marketplace, Pengaturan | Full access |
-| DRIVER | Dashboard Supir, Pengaturan | Truck claim + workflow only |
-| Others | Marketplace, Pengaturan | Marketplace only |
-
----
-
-## Key Files — Backend
-
-### Auth Module
-| File | Purpose |
-|---|---|
-| `src/modules/auth/auth.routes.ts` | Auth routes + admin user CRUD |
-| `src/modules/auth/auth.controller.ts` | register, login, adminCreateUser, listUsers, adminUpdateUser, adminDeleteUser |
-| `src/modules/auth/auth.service.ts` | Business logic for auth + user management |
-| `src/middleware/auth.ts` | JWT auth middleware, `requireAuth`, `AuthRequest` |
-| `src/middleware/rbac.ts` | `requireRole`, `getUserPermissions` |
-
-### Fleet Module
-| File | Purpose |
-|---|---|
-| `src/modules/fleet/fleet.routes.ts` | Fleet + driver routes (SSE, truck CRUD, driver workflow) |
-| `src/modules/fleet/fleet.controller.ts` | Fleet status, truck list, assign, updateLocation |
-| `src/modules/fleet/fleet.service.ts` | Fleet status aggregation, truck queries |
-| `src/modules/fleet/driver.controller.ts` | Driver workflow: me, claim, release, start, arrive, loading, complete, arrive-hub, unload |
-| `src/modules/fleet/route.service.ts` | OSRM client (multi-server fallback), `getRoute`, `interpolateAlongRoute`, `checkOsrmHealth` |
-| `src/modules/fleet/truck.simulation.ts` | 5s tick: move trucks, assign AVAILABLE trucks with multi-TPS smart scoring |
-| `src/modules/fleet/fleet.sse.ts` | SSE endpoint `/api/fleet/live` — broadcasts truck positions |
-| `src/modules/fleet/traffic.service.ts` | TomTom Traffic Flow API integration |
-
-### Pipeline Module
-| File | Purpose |
-|---|---|
-| `src/modules/pipeline/pipeline.routes.ts` | `/api/pipeline/status`, `/stats`, `/events`, `/hdfs` |
-| `src/modules/pipeline/pipeline.controller.ts` | Controller for pipeline endpoints |
-| `src/modules/pipeline/pipeline.service.ts` | Health checks (Kafka TCP, Spark HTTP, HDFS, OSRM, MongoDB), events, HDFS file browser |
-
-### Analytics Module
-| File | Purpose |
-|---|---|
-| `src/modules/analytics/analytics.routes.ts` | `/api/analytics/tps-summary`, `/critical-tps`, `/waste-types` |
-| `src/modules/analytics/analytics.service.ts` | HDFS-first, MongoDB-fallback analytics |
-
-### Marketplace Module
-| File | Purpose |
-|---|---|
-| `src/modules/marketplace/tps.simulation.ts` | 60s tick: TPS volume simulation + Kafka publish |
-| `src/modules/marketplace/tps.kafka.ts` | Kafka producer for `aurora_tps_volume` topic |
-| `src/modules/marketplace/tps.routes.ts` | TPS CRUD + verify |
-| `src/modules/marketplace/tps.controller.ts` | TPS controller |
-| `src/modules/marketplace/tps.service.ts` | TPS service |
-
-### Prisma Schema
-| File | Purpose |
-|---|---|
-| `prisma/schema.prisma` | All models: User, Tps, Truck (with driverId, route, routeWaypoints), SortingHub, etc. |
-| `prisma/seed-trucks.ts` | Seed 152 trucks across 4 depots |
-| `prisma/seed-facilities.ts` | Seed 14 facilities (1 PLTSa + 13 TPS3R) |
-| `prisma/seed-all.ts` | Combined seed |
-| `prisma/reset-trucks.ts` | Reset all trucks to AVAILABLE at depots |
-
-### Config
-| File | Purpose |
-|---|---|
-| `.env` | DATABASE_URL, JWT_SECRET, PORT, OSRM_BASE_URL, TOMTOM_API_KEY, KAFKA_BROKERS |
-| `.env.example` | Template with all env vars documented |
-
----
-
-## Key Files — Frontend
-
-### Pages
-| File | Purpose |
-|---|---|
-| `src/App.tsx` | Main app, sidebar, tab routing, simulation state |
-| `src/pages/LogisticsPage.tsx` | Fleet map with floating live feed overlay |
-| `src/pages/DriverPage.tsx` | Driver workflow: claim truck → navigate → load → deliver |
-| `src/pages/TpsManagement.tsx` | TPS CRUD + verification + map |
-| `src/pages/UserManagement.tsx` | Admin user CRUD (create, edit, suspend, activate) |
-| `src/pages/PipelineDashboard.tsx` | Pipeline monitoring: service status, data flow, events, HDFS browser |
-| `src/pages/SettingsPage.tsx` | User settings |
-
-### Fleet Components
-| File | Purpose |
-|---|---|
-| `src/features/fleet/components/FleetMap.tsx` | Leaflet map with trucks, TPS, facilities, route polylines, waypoint markers, depot markers |
-| `src/features/fleet/components/TruckPanel.tsx` | Truck list panel with filters, status, progress bars |
-| `src/features/fleet/api/fleetApi.ts` | Fleet API client + types (TruckData, TpsData, FacilityData, WaypointStop) |
-| `src/features/fleet/hooks/useFleetStream.ts` | SSE hook for real-time truck/TPS updates |
-
-### Monitoring Components
-| File | Purpose |
-|---|---|
-| `src/features/monitoring/pages/RealtimeDashboard.tsx` | Dashboard with charts, map, weather, stats |
-| `src/features/monitoring/pages/PredictionTable.tsx` | TPS prediction table + TPS3R waste report |
-| `src/features/monitoring/pages/WeatherCard.tsx` | Surabaya weather card |
-| `src/features/monitoring/pages/types.ts` | TpsNode, TruckSim interfaces |
-
-### Marketplace
-| File | Purpose |
-|---|---|
-| `src/features/marketplace/api/marketplaceApi.ts` | All API calls: auth, tps, analytics, fleet, driver, pipeline |
-| `src/features/marketplace/MarketplaceLayout.tsx` | Marketplace UI |
-| `src/contexts/AuthContext.tsx` | Auth context with login/register/logout |
-
----
-
-## Prisma Schema — Key Models
-
-### Truck
-```prisma
-model Truck {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  code            String   @unique        // TRK-C-001, TRK-D-001, TRK-A-001
-  name            String
-  type            String                  // COMPACTOR | DUMP_TRUCK | ARM_ROLL
-  capacityKg      Float                   // 16000 | 20000 | 10000
-  currentLoadKg   Float    @default(0)
-  status          String   @default("AVAILABLE") // AVAILABLE | EN_ROUTE_TO_TPS | LOADING | EN_ROUTE_TO_HUB | UNLOADING
-  lat             Float?
-  lng             Float?
-  heading         Float?
-  driverId        String?  @db.ObjectId    // Links to User (DRIVER role)
-  assignedTpsId   String?  @db.ObjectId
-  destinationLat  Float?
-  destinationLng  Float?
-  facilityId      String?  @db.ObjectId
-  route           Json?                   // GeoJSON LineString geometry
-  routeProgress   Float    @default(0)    // 0.0 to 1.0
-  routeDistance   Float?                  // meters
-  routeDuration   Float?                  // seconds
-  routeWaypoints  Json?                   // [{tpsId, tpsName, tpsLat, tpsLng, collectedKg}]
-  @@map("trucks")
+**File:** `dashboard/src/features/fleet/api/fleetApi.ts`
+```typescript
+export interface FleetUpdate {
+  type: string;
+  trucks?: TruckData[];
+  tps?: TpsData[];
+  facilities?: FacilityData[];
+  allFacilities?: FacilityData[]; // ← TAMBAHAN BARU
+  criticalTps?: ...;
+  timestamp: string;
 }
 ```
 
-### Tps
-```prisma
-model Tps {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  code           String   @unique
-  name           String
-  kecamatan      String
-  lat            Float
-  lng            Float
-  capacityKg     Float    @default(0)
-  currentVolume  Float    @default(0)
-  status         String   @default("AKTIF") // AKTIF | WASPADA | PENUH | NONAKTIF
-  type           String   @default("TPS_BIASA") // TPS_BIASA | COMPACTOR | TPS3R
-  needsReview    Boolean  @default(true)
-  @@map("tps")
+**File:** `dashboard/src/features/fleet/hooks/useFleetStream.ts`
+```typescript
+interface FleetStreamState {
+  trucks: TruckData[];
+  tps: TpsData[];
+  facilities: FacilityData[];
+  allFacilities: FacilityData[]; // ← TAMBAHAN BARU
+  criticalTps: ...;
+  lastUpdate: string | null;
+  connected: boolean;
 }
+
+// SSE handler:
+setState((prev) => ({
+  ...prev,
+  allFacilities: (data as any).allFacilities || data.facilities || [],
+  ...
+}));
 ```
 
-### SortingHub
-```prisma
-model SortingHub {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  code          String   @unique
-  name          String
-  type          String   // PLTSa | TPS3R | TRANSFER_STATION | etc.
-  lat           Float
-  lng           Float
-  capacityKg    Float
-  currentLoadKg Float    @default(0)
-  acceptsTypes  String[] @default([])
-  @@map("sorting_hubs")
-}
+### 1.4 LogisticPage
+
+**File:** `dashboard/src/pages/LogisticsPage.tsx`
+```tsx
+// Before:
+const { trucks, tps, facilities, lastUpdate, connected } = useFleetStream();
+<FleetMap facilities={facilities} ... />
+
+// After:
+const { trucks, tps, facilities, allFacilities, lastUpdate, connected } = useFleetStream();
+<FleetMap facilities={allFacilities} ... />
 ```
 
-### User (key fields)
-```prisma
-model User {
-  id            String        @id @default(auto()) @map("_id") @db.ObjectId
-  email         String        @unique
-  passwordHash  String
-  role          Role          // ADMIN | ADMIN_TPS | BANK_SAMPAH | INDUSTRI | WARGA | UMKM | DRIVER
-  status        AccountStatus // PENDING_VERIFICATION | ACTIVE | SUSPENDED | REJECTED
-  name          String
-  @@map("users")
+### 1.5 Smart Facility Selection
+
+**File:** `backend/api/src/modules/fleet/truck.simulation.ts` + `driver.controller.ts`
+
+```typescript
+function findBestFacility(truckPos: Coordinate, facilities: FacilityWithCapacity[]): FacilityWithCapacity | null {
+  // Hitung jarak ke semua facility
+  const ranked = facilities
+    .filter((f) => isValidCoord(f.lat, f.lng))
+    .map((f) => ({ ...f, distKm: haversineKm(truckPos, { lat: f.lat, lng: f.lng }) }))
+    .sort((a, b) => a.distKm - b.distKm);
+
+  // TPS3R terdekat dengan kapasitas (max 120%)
+  const tps3rAvailable = ranked.filter((f) => {
+    if (f.type !== "TPS3R") return false;
+    const dailyCap = f.dailyCapacityKg ?? 50000;
+    const intake = f.dailyIntakeKg ?? 0;
+    return intake < dailyCap * 1.2;
+  });
+
+  // Prefer TPS3R jika dalam 2x jarak PLTSa
+  if (tps3rAvailable.length > 0) {
+    const pltsa = ranked.find((f) => f.type === "PLTSa");
+    const tps3rDist = tps3rAvailable[0].distKm;
+    const pltsaDist = pltsa ? pltsa.distKm : Infinity;
+    if (tps3rDist <= pltsaDist * 2 || !pltsa) {
+      return tps3rAvailable[0];
+    }
+  }
+
+  // Fallback: PLTSa (always available)
+  return ranked.find((f) => f.type === "PLTSa") || ranked[0];
 }
 ```
 
 ---
 
-## API Endpoints Summary
+## 2. Perubahan Sebelumnya (Sesi Lalu)
 
-### Auth (`/api/auth`)
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| POST | `/register` | No | Register new user |
-| POST | `/login` | No | Login, returns JWT |
-| GET | `/me` | Yes | Current user info |
-| GET | `/admin/users` | ADMIN | List all users (filter: role, status, search) |
-| GET | `/admin/users/stats` | ADMIN | User statistics |
-| POST | `/admin/users` | ADMIN | Create new user |
-| PATCH | `/admin/users/:id` | ADMIN | Update user |
-| DELETE | `/admin/users/:id` | ADMIN | Suspend user |
+### 2.1 OSRM Routing
 
-### Fleet (`/api/fleet`)
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| GET | `/live` | No | SSE stream for real-time truck/TPS data |
-| GET | `/status` | Yes | Fleet summary (total, active, idle trucks) |
-| GET | `/trucks` | Yes | List trucks (filter: status, type) |
-| GET | `/driver/me` | DRIVER | Current driver info + assigned truck |
-| GET | `/driver/assignment` | DRIVER | Current assignment (route, waypoints, facility) |
-| POST | `/driver/claim` | DRIVER | Claim an available truck |
-| POST | `/driver/release` | DRIVER | Release truck (idle only) |
-| POST | `/driver/start` | DRIVER | "Gas Berangkat" — find TPS + create route |
-| POST | `/driver/arrive` | DRIVER | Arrived at TPS |
-| POST | `/driver/loading` | DRIVER | Start loading |
-| POST | `/driver/complete` | DRIVER | Done loading — next TPS or to hub |
-| POST | `/driver/arrive-hub` | DRIVER | Arrived at facility |
-| POST | `/driver/unload` | DRIVER | Unload + reset truck |
+- Public server: `https://router.project-osrm.org`
+- Fallback: `https://routing.openstreetmap.de/routed-car`
+- Koordinat dibulatkan 6 desimal (`Math.round(n * 1e6) / 1e6`)
+- `alternatives=3` untuk multiple routes, pilih terpendek
 
-### Pipeline (`/api/pipeline`)
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| GET | `/status` | Yes | Service health (Kafka, Spark, HDFS, OSRM, MongoDB) |
-| GET | `/stats` | Yes | Pipeline statistics |
-| GET | `/events?limit=N` | Yes | Recent TPS events |
-| GET | `/hdfs?path=/aurora` | Yes | Browse HDFS directories |
+### 2.2 Multi-TPS Route Queue
 
-### Analytics (`/api/analytics`)
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| GET | `/tps-summary` | Yes | TPS summary (HDFS-first, MongoDB fallback) |
-| GET | `/critical-tps` | Yes | Critical TPS list |
-| GET | `/waste-types` | Yes | Waste type distribution |
+```typescript
+// Truck model
+interface RouteQueueItem {
+  type: "TPS" | "FACILITY";
+  tpsId?: string; tpsName?: string; tpsLat?: number; tpsLng?: number;
+  facilityId?: string; facilityName?: string; facilityLat?: number; facilityLng?: number;
+  collectedKg?: number;
+  status: "pending" | "active" | "done";
+}
 
-### TPS (`/api/tps`)
-| Method | Endpoint | Auth | Description |
-|---|---|---|---|
-| GET | `/` | Yes | List TPS |
-| POST | `/` | ADMIN | Create TPS |
-| PATCH | `/:id` | ADMIN | Update TPS |
-| PATCH | `/:id/verify` | ADMIN | Verify TPS |
-| PATCH | `/:id/volume` | ADMIN | Update volume |
-| DELETE | `/:id` | ADMIN | Delete TPS |
+// Truck fields
+routeQueue: Json?    // [{type, tpsId?, facilityId?, status}]
+routeLegIndex: Int   @default(0)
+```
 
----
+### 2.3 Smart Route Scoring
 
-## Simulation Logic
+```
+score = fill × 0.40 + distance × 0.35 + fuel × 0.15 + emission × 0.10
 
-### TPS Simulation (60s interval)
-- Each TPS gets random waste accumulation
-- Scheduled spikes based on `schedule` field
-- Truck collection when volume > 90%
-- Publishes events to Kafka topic `aurora_tps_volume`
+Fill: 75% threshold (<5km), 50% (>=5km)
+Distance: Haversine
+Fuel: Pertamina Dex Rp24.800/liter
+CO2: 2.68 kg/liter diesel
+```
 
-### Truck Simulation (5s interval)
-**Phase 1 — Move trucks:**
-- EN_ROUTE_TO_TPS: interpolate along route geometry
-- EN_ROUTE_TO_HUB: interpolate to facility
-- Arrived at TPS: collect waste, check next waypoint or go to hub
+### 2.4 Driver Workflow State Machine
 
-**Phase 2 — Assign trucks:**
-- Find AVAILABLE trucks
-- Score TPS candidates: `fill×0.35 + distance×0.30 + fuel×0.20 + emission×0.15`
-- Build multi-stop route via OSRM (max 3 waypoints)
-- 1 truck per TPS (2nd truck only if volume > truck capacity)
-- Parallel OSRM calls (max 3 concurrent)
+```
+AVAILABLE → claim → AVAILABLE → start → EN_ROUTE_TO_TPS → arrive → LOADING
+  → complete → EN_ROUTE_TO_TPS (next) / EN_ROUTE_TO_HUB → arrive → UNLOADING
+  → unload → AVAILABLE
+```
 
-**Phase 3 — Broadcast:**
-- SSE push to all connected clients
+- Driver-driven trucks wait for driver (not auto-advance)
+- Auto-advance timeout: 4 menit
 
-### Route Service
-- Multi-server fallback: OSRM public → routing.openstreetmap.de
-- Coordinate rounding to 6 decimal places (prevents HTTP 400)
-- 15s timeout per request
-- Fallback: straight-line interpolation (20 segments)
-- `isFallback: true` flag on fallback routes
+### 2.5 Auto-Assign Logic
 
-### Traffic Service (TomTom)
-- Checks congestion at 3 points along route
-- `jamFactor` 0-10 (0 = free flow, 10 = gridlock)
-- Auto-reroute when congestion > threshold
-- API key in `.env`: `TOMTOM_API_KEY`
+- 1 TPS = 1 truck enforcement (`assignedTpsIds` tracking)
+- `routeLegIndex` update saat truck berpindah leg
+- `assignedCounts` di-update setelah setiap batch assign
 
----
+### 2.6 TomTom Traffic Integration
 
-## Depot Locations
+- API Key: `7p76EsdyEm4vshtRPeSYairOu7Ljpqsc`
+- Endpoint: `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`
+- Traffic check setiap 5 menit (3 titik per rute)
+- Reroute otomatis jika avgCongestion < 0.5
+
+### 2.7 Fuel & Emission Constants
+
+```typescript
+const FUEL_PRICE = 24800; // Pertamina Dex
+const FUEL_EFFICIENCY = { COMPACTOR: 8, DUMP_TRUCK: 6, ARM_ROLL: 7 }; // km/liter
+const CO2_PER_LITER = 2.68; // kg CO2/liter
+```
+
+### 2.8 Depot Locations
+
 ```typescript
 const DEPOTS = [
   { name: "PLTSa Benowo", lat: -7.2185017137913645, lng: 112.6258223434186 },
@@ -324,40 +205,174 @@ const DEPOTS = [
 ];
 ```
 
-## Fuel & Emission Constants
-```typescript
-const FUEL_PRICE = 24800; // Pertamina Dex Rp24,800/liter
-const FUEL_EFFICIENCY = { COMPACTOR: 8, DUMP_TRUCK: 6, ARM_ROLL: 7 }; // km/liter
-const CO2_PER_LITER = 2.68; // kg CO2/liter diesel
+### 2.9 Seed Files
+
+- `seed-facilities.ts`: 1 PLTSa + 13 TPS3R (dengan `dailyCapacityKg`)
+- `seed-trucks.ts`: 4 depot, `lat: garage.lat`, `lng: garage.lng` (tanpa random offset)
+- `reset-trucks.ts`: Reset semua truk ke AVAILABLE di 4 depot (tanpa random offset)
+
+---
+
+## 3. Prisma Schema
+
+### Truck
+```prisma
+model Truck {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  code            String   @unique
+  name            String
+  type            String   // COMPACTOR | DUMP_TRUCK | ARM_ROLL
+  capacityKg      Float
+  currentLoadKg   Float    @default(0)
+  status          String   @default("AVAILABLE")
+  lat             Float?
+  lng             Float?
+  heading         Float?
+  driverId        String?  @db.ObjectId
+  assignedTpsId   String?  @db.ObjectId
+  destinationLat  Float?
+  destinationLng  Float?
+  facilityId      String?  @db.ObjectId
+  route           Json?
+  routeProgress   Float    @default(0)
+  routeDistance   Float?
+  routeDuration   Float?
+  routeWaypoints  Json?
+  routeQueue      Json?    // [{type, tpsId?, facilityId?, status}]
+  routeLegIndex   Int      @default(0)
+  @@map("trucks")
+}
+```
+
+### SortingHub
+```prisma
+model SortingHub {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  code            String   @unique
+  name            String
+  type            String   // PLTSa | TPS3R | ...
+  kecamatan       String?
+  lat             Float
+  lng             Float
+  capacityKg      Float
+  currentLoadKg   Float    @default(0)
+  dailyCapacityKg Float?   // Kapasitas harian (null = unlimited, seperti PLTSa)
+  dailyIntakeKg   Float    @default(0)
+  lastIntakeReset DateTime @default(now())
+  acceptsTypes    String[] @default([])
+  @@map("sorting_hubs")
+}
+```
+
+### User (key fields)
+```prisma
+enum Role {
+  ADMIN | ADMIN_TPS | BANK_SAMPAH | INDUSTRI | WARGA | UMKM | DRIVER
+}
 ```
 
 ---
 
-## Docker Services (WSL)
+## 4. Backend Modules
+
+| File | Purpose |
+|---|---|
+| `truck.simulation.ts` | Route queue, 1 TPS=1 truck, auto-assign, traffic check |
+| `driver.controller.ts` | Driver workflow: claim, start, arrive, complete, unload, auto-advance |
+| `fleet.service.ts` | Fleet status, task suggestions, manual dispatch |
+| `fleet.sse.ts` | SSE streaming (trucks, tps, facilities, allFacilities) |
+| `route.service.ts` | OSRM multi-server, coordinate rounding |
+| `traffic.service.ts` | TomTom traffic check |
+| `analytics.service.ts` | HDFS analytics (with MongoDB fallback) |
+| `pipeline.service.ts` | Pipeline health checks, HDFS browser |
+
+---
+
+## 5. Frontend Components
+
+| File | Purpose |
+|---|---|
+| `FleetMap.tsx` | Leaflet map: trucks, TPS, facilities, routes, waypoints, depot markers |
+| `TruckPanel.tsx` | Sidebar: status, filters, live feed |
+| `LogisticsPage.tsx` | Halaman Armada & Rute (SSE + map + cost chart) |
+| `DriverPage.tsx` | Dashboard supir (state machine) |
+| `UserManagement.tsx` | CRUD akun admin |
+| `PipelineDashboard.tsx` | Status pipeline Kafka/Spark/HDFS |
+| `RealtimeDashboard.tsx` | Dashboard admin utama |
+
+---
+
+## 6. API Endpoints
+
+### Auth (`/api/auth`)
+| Method | Endpoint | Description |
+|---|---|---|
+| POST | `/register` | Register |
+| POST | `/login` | Login |
+| GET | `/me` | Current user |
+| GET | `/admin/users` | List users (admin) |
+| GET | `/admin/users/stats` | User stats |
+| POST | `/admin/users` | Create user |
+| PATCH | `/admin/users/:id` | Update user |
+| DELETE | `/admin/users/:id` | Suspend user |
+
+### Fleet (`/api/fleet`)
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/live` | SSE stream |
+| GET | `/status` | Fleet summary |
+| GET | `/trucks` | List trucks |
+| GET | `/driver/me` | Driver info |
+| GET | `/driver/assignment` | Current assignment |
+| GET | `/driver/available-trucks` | Available trucks list |
+| POST | `/driver/claim` | Claim truck |
+| POST | `/driver/release` | Release truck |
+| POST | `/driver/start` | "Gas Berangkat" |
+| POST | `/driver/arrive` | Arrived at TPS |
+| POST | `/driver/loading` | Start loading |
+| POST | `/driver/complete` | Selesai mengangkut |
+| POST | `/driver/auto-advance` | Auto-advance (4 menit) |
+| POST | `/driver/arrive-hub` | Arrived at facility |
+| POST | `/driver/unload` | Unload + reset |
+| POST | `/driver/admin-insert` | Admin insert TPS ke queue |
+| GET | `/suggestions` | Task suggestions |
+| POST | `/dispatch` | Manual dispatch |
+
+### Pipeline (`/api/pipeline`)
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/status` | Service health |
+| GET | `/stats` | Pipeline stats |
+| GET | `/events?limit=N` | Recent events |
+| GET | `/hdfs?path=/aurora` | Browse HDFS |
+
+### Analytics (`/api/analytics`)
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/tps-summary` | TPS summary |
+| GET | `/critical-tps` | Critical TPS |
+| `/waste-types` | Waste type distribution |
+
+---
+
+## 7. WSL Scripts
 
 ```bash
-# Start all big data services
+# Start pipeline
 bash backend/scripts/start-pipeline.sh
 
-# Stop all
+# Stop pipeline
 bash backend/scripts/stop-pipeline.sh
 
-# Submit Spark job only
+# Submit Spark job
 bash backend/scripts/submit-spark.sh
 ```
 
-Services: ZooKeeper, Kafka, HDFS (Namenode + Datanode), Spark (Master + Worker)
-
 ---
 
-## Restart Instructions
+## 8. Restart Commands
 
 ```bash
-# Kill old processes
-# Windows PowerShell:
-Get-NetTCPConnection -LocalPort 4000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-Get-NetTCPConnection -LocalPort 5173 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
-
 # Backend
 cd D:\Github\FP-Bigdata-AURORA\backend\api
 npx tsx src/index.ts
@@ -369,28 +384,12 @@ npm run dev
 
 ---
 
-## Known Issues & Notes
+## 9. Known Issues & Notes
 
-1. **OSRM**: Using public server (`router.project-osrm.org`). For offline/fast routing, set up local OSRM Docker with Java PBF data (see `backend/scripts/prepare-osrm.sh`).
-
-2. **Kafka**: Big data containers must be running in WSL Docker for Kafka events. Without Kafka, TPS simulation still works but events aren't published.
-
-3. **Driver-Truck Relation**: Trucks have `driverId` field. Driver must "claim" a truck before starting workflow. Truck must be AVAILABLE and not claimed by another driver.
-
-4. **Route Ordering**: In `fleet.routes.ts`, specific routes (`/driver/me`, `/driver/claim`) must come BEFORE wildcard (`/driver/:id`) to avoid 404 errors.
-
-5. **Coordinate Precision**: OSRM rejects coordinates with >6 decimal places. Always round: `Math.round(n * 1e6) / 1e6`.
-
-6. **Prisma Schema Changes**: After modifying `schema.prisma`, run:
-   ```bash
-   cd backend/api
-   npx prisma generate
-   npx prisma db push --accept-data-loss
-   ```
-
-7. **Seed Data**: After schema changes, re-seed:
-   ```bash
-   npx tsx prisma/seed-facilities.ts   # 14 facilities
-   npx tsx prisma/seed-trucks.ts       # 152 trucks
-   npx tsx prisma/reset-trucks.ts      # Reset to depots
-   ```
+1. **OSRM**: Public server works. For offline/fast, set up local Docker with Java PBF.
+2. **Kafka**: Big data containers must be running in WSL Docker.
+3. **Driver-Truck Relation**: `driverId` field on Truck model. Driver must "claim" truck first.
+4. **Route Ordering**: Specific routes (`/driver/me`) must come BEFORE wildcard (`/driver/:id`).
+5. **Coordinate Precision**: Always round to 6 decimal places for OSRM.
+6. **Prisma Schema Changes**: After modifying `schema.prisma`, run `npx prisma generate && npx prisma db push --accept-data-loss`.
+7. **Seed Data**: Run seed scripts after schema changes.

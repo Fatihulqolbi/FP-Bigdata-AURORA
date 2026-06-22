@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   CheckCircle, XCircle, AlertTriangle, Radio, MessageSquare,
   Zap, HardDrive, BarChart3, Folder, File, ChevronRight,
-  Server, Database, Activity, Clock, ArrowRight,
+  Server, Database, Activity, ArrowRight,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:4000/api";

@@ -11,6 +11,7 @@ const FACILITIES = [
     lat: -7.2185017137913645,
     lng: 112.6258223434186,
     capacityKg: 500_000,
+    dailyCapacityKg: null, // Unlimited
     acceptsTypes: ["RESIDU"],
   },
   {
@@ -21,6 +22,7 @@ const FACILITIES = [
     lat: -7.311002,
     lng: 112.717690,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000, // 20 ton/hari
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -31,6 +33,7 @@ const FACILITIES = [
     lat: -7.349131484431199,
     lng: 112.73746374666213,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -41,6 +44,7 @@ const FACILITIES = [
     lat: -7.348644092878298,
     lng: 112.77775707071487,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -51,6 +55,7 @@ const FACILITIES = [
     lat: -7.365188,
     lng: 112.779062,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -61,6 +66,7 @@ const FACILITIES = [
     lat: -7.269187,
     lng: 112.747688,
     capacityKg: 30_000,
+    dailyCapacityKg: 15_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -71,6 +77,7 @@ const FACILITIES = [
     lat: -7.340819432013898,
     lng: 112.67922957010325,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -81,6 +88,7 @@ const FACILITIES = [
     lat: -7.358438,
     lng: 112.739187,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -91,6 +99,7 @@ const FACILITIES = [
     lat: -7.216563,
     lng: 112.778813,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -101,6 +110,7 @@ const FACILITIES = [
     lat: -7.343312,
     lng: 112.762938,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -111,6 +121,7 @@ const FACILITIES = [
     lat: -7.345312,
     lng: 112.766687,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -121,6 +132,7 @@ const FACILITIES = [
     lat: -7.331812,
     lng: 112.815312,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
   },
   {
@@ -131,6 +143,7 @@ const FACILITIES = [
     lat: -7.278155883069684,
     lng: 112.76292877892284,
     capacityKg: 30_000,
+    dailyCapacityKg: 15_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS", "LOGAM"],
   },
   {
@@ -141,7 +154,53 @@ const FACILITIES = [
     lat: -7.333187,
     lng: 112.660312,
     capacityKg: 50_000,
+    dailyCapacityKg: 20_000,
     acceptsTypes: ["ORGANIK", "PLASTIK_PET", "KERTAS"],
+  },
+  // Depots (truck parking/start locations)
+  {
+    code: "DEPOT-PLTSA",
+    name: "Depot PLTSa Benowo",
+    type: "DEPOT",
+    kecamatan: "Benowo",
+    lat: -7.2185017137913645,
+    lng: 112.6258223434186,
+    capacityKg: 0,
+    dailyCapacityKg: null,
+    acceptsTypes: [],
+  },
+  {
+    code: "DEPOT-DLH",
+    name: "Depot DLH Surabaya",
+    type: "DEPOT",
+    kecamatan: "Gubeng",
+    lat: -7.278405714355262,
+    lng: 112.76320233999931,
+    capacityKg: 0,
+    dailyCapacityKg: null,
+    acceptsTypes: [],
+  },
+  {
+    code: "DEPOT-UTARA",
+    name: "Depo Utara",
+    type: "DEPOT",
+    kecamatan: "Pusat",
+    lat: -7.2100,
+    lng: 112.7300,
+    capacityKg: 0,
+    dailyCapacityKg: null,
+    acceptsTypes: [],
+  },
+  {
+    code: "DEPOT-SELATAN",
+    name: "Depo Selatan",
+    type: "DEPOT",
+    kecamatan: "Selatan",
+    lat: -7.3000,
+    lng: 112.7300,
+    capacityKg: 0,
+    dailyCapacityKg: null,
+    acceptsTypes: [],
   },
 ];
 
@@ -159,7 +218,9 @@ async function main() {
         lat: facility.lat,
         lng: facility.lng,
         capacityKg: facility.capacityKg,
+        dailyCapacityKg: facility.dailyCapacityKg ?? null,
         currentLoadKg: 0,
+        dailyIntakeKg: 0,
         acceptsTypes: facility.acceptsTypes,
       },
     });

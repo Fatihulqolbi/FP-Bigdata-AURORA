@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import type { FleetUpdate, TruckData, TpsData, FacilityData } from "../api/fleetApi";
+import { useEffect, useRef, useState } from "react";
+import type { FleetUpdate, TruckData, TpsData, FacilityData, CriticalTps } from "../api/fleetApi";
 
 const SSE_URL = "http://localhost:4000/api/fleet/live";
 
@@ -7,7 +7,8 @@ interface FleetStreamState {
   trucks: TruckData[];
   tps: TpsData[];
   facilities: FacilityData[];
-  criticalTps: { id: string; code: string; name: string; fill: string }[];
+  allFacilities: FacilityData[];
+  criticalTps: CriticalTps[];
   lastUpdate: string | null;
   connected: boolean;
 }
@@ -17,6 +18,7 @@ export function useFleetStream() {
     trucks: [],
     tps: [],
     facilities: [],
+    allFacilities: [],
     criticalTps: [],
     lastUpdate: null,
     connected: false,
@@ -42,6 +44,7 @@ export function useFleetStream() {
             trucks: data.trucks || [],
             tps: data.tps || [],
             facilities: data.facilities || [],
+            allFacilities: (data as any).allFacilities || data.facilities || [],
             connected: true,
           }));
         } else if (data.type === "tick") {

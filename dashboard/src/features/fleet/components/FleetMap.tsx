@@ -53,13 +53,9 @@ const pltsaIcon = new L.DivIcon({
   className: "pltsa-marker",
 });
 
-const depotIcon = new L.DivIcon({
-  html: `<div style="background-color: #6b7280; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 8px rgba(107,114,128,0.5); display: flex; align-items: center; justify-content: center;">
-           <div style="width: 6px; height: 6px; background: white; border-radius: 50%;"></div>
-         </div>`,
-  className: "depot-marker",
-  iconSize: [16, 16],
-  iconAnchor: [8, 8],
+const tps3rFullIcon = new L.DivIcon({
+  html: `<div style="background-color: #f59e0b; width: 18px; height: 18px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 12px #f59e0b; display: flex; align-items: center; justify-content: center; font-size: 10px; color: white; font-weight: bold;">F</div>`,
+  className: "tps3r-full-marker",
 });
 
 function depotCountIcon(count: number) {
@@ -144,8 +140,8 @@ export default function FleetMap({
   showDumpTruck,
   showArmRoll,
   showRoutes,
-  selectedTruckId,
   onTruckClick,
+  selectedTruckId,
 }: FleetMapProps) {
   const filteredTrucks = useMemo(() => {
     return trucks.filter((t) => {
@@ -211,16 +207,24 @@ export default function FleetMap({
       ))}
 
       {/* Facility Markers */}
-      {facilities.map((f) => (
-        <Marker key={`facility-${f.id}`} position={[f.lat, f.lng]} icon={f.type === "PLTSa" ? pltsaIcon : facilityIcon} zIndexOffset={f.type === "PLTSa" ? 1000 : 500}>
-          <Tooltip direction="top" offset={L.point(0, -15)} opacity={1} permanent={f.type === "PLTSa"}>
-            <div style={{ textAlign: "center" }}>
-              <strong style={{ color: f.type === "PLTSa" ? "#ef4444" : "#000", fontSize: f.type === "PLTSa" ? "14px" : "12px" }}>{f.name}</strong><br />
-              <span style={{ fontSize: "11px", color: "#666" }}>{f.type}</span>
-            </div>
-          </Tooltip>
-        </Marker>
-      ))}
+      {facilities.map((f) => {
+        const isPltsa = f.type === "PLTSa";
+        const isTps3r = f.type === "TPS3R";
+        const isFull = f.capacityKg > 0 && f.currentLoadKg >= f.capacityKg * 0.8;
+        const icon = isPltsa ? pltsaIcon : (isTps3r && isFull) ? tps3rFullIcon : facilityIcon;
+        const tooltipColor = isPltsa ? "#ef4444" : (isTps3r && isFull) ? "#f59e0b" : "#3b82f6";
+
+        return (
+          <Marker key={`facility-${f.id}`} position={[f.lat, f.lng]} icon={icon} zIndexOffset={isPltsa ? 1000 : 500}>
+            <Tooltip direction="top" offset={L.point(0, -15)} opacity={1} permanent={isPltsa}>
+              <div style={{ textAlign: "center" }}>
+                <strong style={{ color: tooltipColor, fontSize: isPltsa ? "14px" : "12px" }}>{f.name}</strong><br />
+                <span style={{ fontSize: "11px", color: "#666" }}>{isTps3r ? "TPS3R" : isPltsa ? "PLTSa" : f.type}</span>
+              </div>
+            </Tooltip>
+          </Marker>
+        );
+      })}
 
       {/* Depot Markers (1 per depot with count badge) */}
       {depots.map((depot, i) => (
@@ -326,14 +330,14 @@ export default function FleetMap({
                   </>
                 ) : null;
               })()}
-              {(truck.routeQueue as RouteQueueItem[] | null)?.filter((l) => l.type === "TPS" && l.status !== "done").length > 0 && (
+              {((truck.routeQueue as RouteQueueItem[] | null)?.filter((l) => l?.type === "TPS" && l?.status !== "done")?.length ?? 0) > 0 && (
                 <>
                   <br /><span style={{ fontWeight: "bold", color: "#3b82f6" }}>Rute:</span>
-                  {(truck.routeQueue as RouteQueueItem[]).filter((l) => l.type === "TPS").map((leg, i) => (
-                    <div key={leg.tpsId || i} style={{ marginLeft: "8px", fontSize: "11px", opacity: leg.status === "done" ? 0.4 : 1 }}>
-                      {i + 1}. {leg.tpsName} ({(leg.collectedKg || 0).toLocaleString()} kg)
-                      {leg.status === "done" && " ✓"}
-                      {leg.status === "active" && " ◀"}
+                  {((truck.routeQueue as RouteQueueItem[])?.filter((l) => l?.type === "TPS" && l?.tpsName) ?? []).map((leg, i) => (
+                    <div key={leg.tpsId || i} style={{ marginLeft: "8px", fontSize: "11px", opacity: leg?.status === "done" ? 0.4 : 1 }}>
+                      {i + 1}. {leg?.tpsName} ({(leg?.collectedKg || 0).toLocaleString()} kg)
+                      {leg?.status === "done" && " ✓"}
+                      {leg?.status === "active" && " ◀"}
                     </div>
                   ))}
                 </>
@@ -410,19 +414,19 @@ export default function FleetMap({
               })()}
             </div>
             {/* Waypoints list */}
-            {(selectedTruck.routeWaypoints as WaypointStop[] | null)?.filter((w) => w.collectedKg > 0).length > 0 && (
+            {((selectedTruck.routeWaypoints as WaypointStop[] | null)?.filter((w) => w?.collectedKg > 0 && w?.tpsName)?.length ?? 0) > 0 && (
               <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "10px" }}>
                 <div style={{ fontWeight: "bold", marginBottom: "6px", color: "#94a3b8" }}>Rute Multi-Stop:</div>
-                {(selectedTruck.routeWaypoints as WaypointStop[]).filter((w) => w.collectedKg > 0).map((wp, i) => (
-                  <div key={wp.tpsId} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                {((selectedTruck.routeWaypoints as WaypointStop[])?.filter((w) => w?.collectedKg > 0) ?? []).map((wp, i) => (
+                  <div key={wp?.tpsId || i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                     <span style={{
                       width: "18px", height: "18px", borderRadius: "50%",
                       background: routeColors[selectedTruck.type] || "#3b82f6",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: "10px", fontWeight: "bold", flexShrink: 0,
                     }}>{i + 1}</span>
-                    <span>{wp.tpsName}</span>
-                    <span style={{ marginLeft: "auto", color: "#94a3b8" }}>{wp.collectedKg.toLocaleString()} kg</span>
+                    <span>{wp?.tpsName}</span>
+                    <span style={{ marginLeft: "auto", color: "#94a3b8" }}>{wp?.collectedKg?.toLocaleString() ?? 0} kg</span>
                   </div>
                 ))}
               </div>

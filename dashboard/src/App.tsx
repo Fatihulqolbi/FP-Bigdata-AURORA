@@ -53,9 +53,9 @@ function App() {
   }, [user]);
 
   const [liveTonnage, setLiveTonnage] = useState(1792);
-  const [showCompactor, setShowCompactor] = useState(true);
-  const [showDumpTruck, setShowDumpTruck] = useState(true);
-  const [showArmRoll, setShowArmRoll] = useState(true);
+  const [showCompactor, _setShowCompactor] = useState(true);
+  const [showDumpTruck, _setShowDumpTruck] = useState(true);
+  const [showArmRoll, _setShowArmRoll] = useState(true);
 
   const [simState, setSimState] = useState(() => {
     const initialTps: TpsNode[] = TPS_DATA.map((tps) => {

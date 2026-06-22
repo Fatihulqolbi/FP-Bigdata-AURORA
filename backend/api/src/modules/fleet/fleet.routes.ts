@@ -12,6 +12,9 @@ router.get("/live", fleetSSEHandler);
 // Fleet status summary
 router.get("/status", requireAuth, fleetCtrl.getFleetStatus);
 
+// Critical TPS alerts
+router.get("/critical-tps", requireAuth, fleetCtrl.getCriticalTpsHandler);
+
 // Truck CRUD
 router.get("/trucks", requireAuth, fleetCtrl.listTrucks);
 router.get("/trucks/:id", requireAuth, fleetCtrl.getTruckById);
@@ -35,6 +38,9 @@ router.post("/driver/complete", requireAuth, driverCtrl.completeLoading);
 router.post("/driver/auto-advance", requireAuth, driverCtrl.autoAdvance);
 router.post("/driver/arrive-hub", requireAuth, driverCtrl.arriveAtHub);
 router.post("/driver/unload", requireAuth, driverCtrl.unloadAtHub);
+router.post("/driver/arrive-depot", requireAuth, driverCtrl.arriveAtDepot);
+router.post("/driver/generate-backup-code", requireAuth, driverCtrl.generateBackupCode);
+router.post("/driver/backup-arrive", requireAuth, driverCtrl.backupArrive);
 router.post("/driver/admin-insert", requireAuth, driverCtrl.adminInsert);
 
 // Driver dashboard (legacy - wildcard LAST)

@@ -83,12 +83,24 @@ export async function getCriticalTps() {
 
 export async function getFleetStats() {
   const trucks = await prisma.truck.findMany({ select: { type: true, status: true } });
+  
+  // Normalize detailed truck types to generic categories for dashboard
+  const normalizeType = (type: string): string => {
+    if (type.startsWith("COMPACTOR")) return "COMPACTOR";
+    if (type.startsWith("ARMROLL")) return "ARM_ROLL";
+    if (type === "DUMP_TRUCK") return "DUMP_TRUCK";
+    if (type === "PICK_UP") return "DUMP_TRUCK"; // Categorize Pick Up with Dump Trucks
+    return type;
+  };
+  
   const byType: Record<string, { total: number; active: number }> = {};
   for (const t of trucks) {
-    if (!byType[t.type]) byType[t.type] = { total: 0, active: 0 };
-    byType[t.type].total++;
-    if (t.status !== "AVAILABLE") byType[t.type].active++;
+    const normalizedType = normalizeType(t.type);
+    if (!byType[normalizedType]) byType[normalizedType] = { total: 0, active: 0 };
+    byType[normalizedType].total++;
+    if (t.status !== "AVAILABLE") byType[normalizedType].active++;
   }
+  
   return {
     total: trucks.length,
     active: trucks.filter((t) => t.status !== "AVAILABLE").length,

@@ -41,7 +41,6 @@ const TRUCK_TYPE_LABEL: Record<string, string> = {
 
 const FUEL_EFF: Record<string, number> = { COMPACTOR: 8, DUMP_TRUCK: 6, ARM_ROLL: 7 };
 const FUEL_PRICE = 24800;
-const AVG_SPEED_MS = 13.88; // 50 km/h
 
 const COST_BAR_H = 42;
 const COST_CHART_H = 300;
@@ -102,7 +101,7 @@ function fmtRp(v: number) {
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function LogisticsPage() {
-  const { trucks, tps, facilities, lastUpdate, connected } = useFleetStream();
+  const { trucks, tps, facilities: _facilities, allFacilities, lastUpdate, connected } = useFleetStream();
 
   const [showCompactor, setShowCompactor] = useState(true);
   const [showDumpTruck, setShowDumpTruck] = useState(true);
@@ -289,7 +288,6 @@ export default function LogisticsPage() {
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)", animation: "fadeIn 0.4s ease" }}>
-
       {/* MAP */}
       <div style={{
         position: "relative", height: mapHeight,
@@ -326,7 +324,7 @@ export default function LogisticsPage() {
 
         <div style={{ position: "absolute", inset: 0 }}>
           <FleetMap
-            trucks={trucks} tps={tps} facilities={facilities}
+            trucks={trucks} tps={tps} facilities={allFacilities}
             showCompactor={showCompactor} showDumpTruck={showDumpTruck}
             showArmRoll={showArmRoll} showRoutes={showRoutes}
             selectedTruckId={selectedTruckId} onTruckClick={handleTruckClick}
@@ -533,8 +531,8 @@ export default function LogisticsPage() {
                   <RechartsTooltip
                     contentStyle={{ background: "rgba(10,18,36,0.97)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "10px", fontSize: "12px" }}
                     labelStyle={{ color: "var(--text-primary)", fontWeight: 700, marginBottom: "6px" }}
-                    formatter={(v: number, name: string) =>
-                      name === "tonDiproses" ? [`${v} ton`, "Ton Diproses"] : [fmtRp(v), TRUCK_TYPE_LABEL[name] || name]
+                    formatter={(v, name) =>
+                      name === "tonDiproses" ? [`${v} ton`, "Ton Diproses"] : [fmtRp(v as number), TRUCK_TYPE_LABEL[name as string] || name]
                     }
                   />
                   <ReferenceLine yAxisId="cost" x="6j"  stroke="#3b82f6" strokeDasharray="4 2" strokeWidth={1.5} />

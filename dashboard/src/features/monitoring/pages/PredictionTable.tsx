@@ -1,8 +1,4 @@
-import type { TpsNode } from "./types";
-
-interface PredictionTableProps {
-  data: TpsNode[];
-}
+import OverloadPredictionTable from "../components/OverloadPredictionTable";
 
 const tps3rData = [
   { id: 1, name: "Super Depo Sutorejo", pos: [-7.265, 112.795] as [number, number], volume: 11.85, organik: 4.30, kertas: 0.54, plastik: 0.53, bahanLain: 0.56, jumlahDaurUlang: 1.63, jumlahTerolah: 5.93, residu: 5.92 },
@@ -17,81 +13,10 @@ const tps3rData = [
   { id: 10, name: "TPS 3R Banjarsugihan", pos: [-7.255, 112.665] as [number, number], volume: 3.97, organik: 0.97, kertas: 0.26, plastik: 0.33, bahanLain: 0.32, jumlahDaurUlang: 0.91, jumlahTerolah: 1.88, residu: 2.09 },
 ];
 
-export default function PredictionTable({ data }: PredictionTableProps) {
+export default function PredictionTable() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginBottom: "24px" }}>
-      <div className="glass-panel" style={{ padding: "20px", overflowX: "auto" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-          <div>
-            <h3 style={{ fontSize: "18px", marginBottom: "4px", color: "var(--text-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#ef4444", animation: "pulse 1.5s infinite" }}></div>
-              Live AI Prediction: Kafka & Spark Streaming
-            </h3>
-            <p style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-              Model didasarkan pada aggregasi <i>real-time payload</i> TPS (Volume, <i>Event</i>, Jam) melalui pipeline Hadoop & Spark.
-            </p>
-          </div>
-        </div>
-        <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left" }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid var(--glass-border)", color: "var(--text-secondary)", fontSize: "14px" }}>
-              <th style={{ padding: "8px" }}>Nama TPS</th>
-              <th style={{ padding: "8px" }}>Kecamatan</th>
-              <th style={{ padding: "8px" }}>Volume Saat Ini</th>
-              <th style={{ padding: "8px" }}>Kapasitas Maks</th>
-              <th style={{ padding: "8px" }}>Status Peringatan</th>
-              <th style={{ padding: "8px" }}>Sistem Prediksi Penuh</th>
-            </tr>
-          </thead>
-          <tbody style={{ fontSize: "14px" }}>
-            {data
-              .slice()
-              .sort((a, b) => b.volume / b.capacity - a.volume / a.capacity)
-              .slice(0, 15)
-              .map((row) => (
-                <tr key={row.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                  <td style={{ padding: "8px", color: "var(--text-primary)" }}>{row.tps}</td>
-                  <td style={{ padding: "8px", color: "var(--text-secondary)" }}>{row.area}</td>
-                  <td style={{ padding: "8px", color: "var(--text-primary)", fontWeight: "bold" }}>{row.volume} Ton</td>
-                  <td style={{ padding: "8px", color: "var(--text-secondary)" }}>{row.capacity} Ton</td>
-                  <td style={{ padding: "8px" }}>
-                    <span
-                      style={{
-                        padding: "4px 8px",
-                        borderRadius: "12px",
-                        fontSize: "11px",
-                        background: row.status.includes("Kritis")
-                          ? "rgba(239,68,68,0.2)"
-                          : row.status.includes("Warning")
-                            ? "rgba(245,158,11,0.2)"
-                            : "rgba(34,197,94,0.2)",
-                        color: row.status.includes("Kritis")
-                          ? "#ef4444"
-                          : row.status.includes("Warning")
-                            ? "#f59e0b"
-                            : "#22c55e",
-                      }}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                  <td
-                    style={{
-                      padding: "8px",
-                      color: row.status.includes("Kritis") ? "#ef4444" : "var(--text-secondary)",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    {row.predicted_full}
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-        <div style={{ textAlign: "center", marginTop: "10px", fontSize: "12px", color: "var(--text-secondary)" }}>
-          Menampilkan 15 TPS paling kritis dari total {data.length} lokasi.
-        </div>
-      </div>
+      <OverloadPredictionTable />
 
       <div className="glass-panel" style={{ padding: "20px", overflowX: "auto" }}>
         <h3 style={{ fontSize: "18px", marginBottom: "4px", color: "var(--text-primary)", textAlign: "center" }}>

@@ -1,0 +1,21 @@
+FROM apache/spark-py:v3.4.0
+
+USER root
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/
+
+ENV SPARK_HOME=/opt/spark
+ENV PATH=$SPARK_HOME/bin:$SPARK_HOME/sbin:$PATH
+
+WORKDIR /app
+
+COPY spark-streaming/*.py /app/
+
+RUN mkdir -p /app/checkpoints /app/logs
+
+EXPOSE 4040 8080
+
+CMD ["tail", "-f", "/dev/null"]

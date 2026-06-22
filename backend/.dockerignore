@@ -1,0 +1,14 @@
+**/node_modules
+**/.git
+**/__pycache__
+**/*.pyc
+**/venv
+**/.venv
+**/dist
+**/build
+**/.next
+**/coverage
+**/.nyc_output
+**/*.log
+**/hadoop_namenode
+**/hadoop_datanode

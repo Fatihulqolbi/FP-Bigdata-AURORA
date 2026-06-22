@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { TruckData, TpsData, WaypointStop, RouteQueueItem } from "../api/fleetApi";
+import type { TruckData, TpsData, RouteQueueItem } from "../api/fleetApi";
 
 interface TruckPanelProps {
   trucks: TruckData[];
@@ -44,7 +44,7 @@ function getPlannedLoad(truck: TruckData): number {
 
 export default function TruckPanel({
   trucks,
-  tps,
+  tps: _tps,
   selectedTruckId,
   onSelectTruck,
   showCompactor,
@@ -74,8 +74,6 @@ export default function TruckPanel({
     const order: Record<string, number> = { EN_ROUTE_TO_TPS: 0, LOADING: 1, EN_ROUTE_TO_HUB: 2, UNLOADING: 3, AVAILABLE: 4 };
     return [...filteredTrucks].sort((a, b) => (order[a.status] ?? 5) - (order[b.status] ?? 5));
   }, [filteredTrucks]);
-
-  const tpsMap = useMemo(() => new Map(tps.map((t) => [t.id, t])), [tps]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px", height: "100%", overflow: "hidden" }}>

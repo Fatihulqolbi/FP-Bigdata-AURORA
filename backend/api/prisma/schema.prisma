@@ -86,6 +86,30 @@ enum LogisticsOption {
   DELIVERY
 }
 
+enum TruckType {
+  COMPACTOR_10
+  COMPACTOR_6_5
+  DUMP_TRUCK
+  ARMROLL_14
+  ARMROLL_8
+  ARMROLL_6
+  PICK_UP
+}
+
+enum FacilityType {
+  TPS
+  TPS3R
+  RUMAH_KOMPOS
+  PLTSA
+  SUPERDEPO
+  TRANSFER_STATION
+}
+
+enum PengangkutanType {
+  ARMROLL
+  COMPACTOR
+}
+
 model User {
   id            String        @id @default(auto()) @map("_id") @db.ObjectId
   email         String        @unique
@@ -288,75 +312,218 @@ model AuditLog {
 }
 
 model Tps {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  code           String   @unique
-  name           String
-  kecamatan      String
-  kelurahan      String?
-  lat            Float
-  lng            Float
-  capacityKg     Float    @default(0)
-  fillThreshold  Float    @default(0.9)
-  currentVolume  Float    @default(0)
-  status         String   @default("AKTIF")
-  type           String   @default("TPS_BIASA") // TPS_BIASA | COMPACTOR
-  schedule       Json     @default("[]")
-  needsReview    Boolean  @default(true)
-  verifiedBy     String?  @db.ObjectId
-  verifiedAt     DateTime?
-  source         String   @default("PDF")
-  rawAddress     String?
-  confidence     Float    @default(0)
-  images         String[] @default([])
-  adminId        String?  @db.ObjectId
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                      String   @id @default(auto()) @map("_id") @db.ObjectId
+  code                    String   @unique
+  name                    String
+  kecamatan               String
+  kelurahan               String?
+  lat                     Float
+  lng                     Float
+  capacityKg              Float    @default(0)
+  fillThreshold           Float    @default(0.9)
+  currentVolume           Float    @default(0)
+  status                  String   @default("AKTIF")
+  type                    String   @default("TPS_BIASA")
+  schedule                Json     @default("[]")
+  needsReview             Boolean  @default(true)
+  verifiedBy              String?  @db.ObjectId
+  verifiedAt              DateTime?
+  source                  String   @default("PDF")
+  rawAddress              String?
+  confidence              Float    @default(0)
+  images                  String[] @default([])
+  adminId                 String?  @db.ObjectId
+  
+  volMasukM3              Float?
+  volDikelolaM3           Float?
+  volDiangkutM3           Float?
+  estimasiBeratKg         Float?
+  isJalanProtokol         Boolean  @default(false)
+  klasifikasiPengangkutan String?
+  jenisFasilitas          String?
+  
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   @@map("tps")
 }
 
 model Truck {
-  id              String   @id @default(auto()) @map("_id") @db.ObjectId
-  code            String   @unique
-  name            String
-  type            String   // COMPACTOR | DUMP_TRUCK | ARM_ROLL
-  capacityKg      Float
-  currentLoadKg   Float    @default(0)
-  status          String   @default("AVAILABLE") // AVAILABLE | EN_ROUTE_TO_TPS | LOADING | EN_ROUTE_TO_HUB | UNLOADING
-  lat             Float?
-  lng             Float?
-  heading         Float?   // degrees, for map rotation
-  driverId        String?  @db.ObjectId
-  assignedTpsId   String?  @db.ObjectId
-  destinationLat  Float?
-  destinationLng  Float?
-  facilityId      String?  @db.ObjectId
-  route           Json?
-  routeProgress   Float    @default(0)
-  routeDistance   Float?   // meters
-  routeDuration   Float?   // seconds
-  routeWaypoints Json?    // [{tpsId, tpsName, tpsLat, tpsLng, collectedKg}]
-  routeQueue      Json?    // [{type, tpsId?, facilityId?, status: "pending"|"active"|"done"}]
-  routeLegIndex   Int      @default(0)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id                      String   @id @default(auto()) @map("_id") @db.ObjectId
+  code                    String   @unique
+  name                    String
+  type                    String
+  capacityKg              Float
+  currentLoadKg           Float    @default(0)
+  status                  String   @default("AVAILABLE")
+  lat                     Float?
+  lng                     Float?
+  heading                 Float?
+  driverId                String?  @db.ObjectId
+  assignedTpsId           String?  @db.ObjectId
+  destinationLat          Float?
+  destinationLng          Float?
+  facilityId              String?  @db.ObjectId
+  route                   Json?
+  routeProgress           Float    @default(0)
+  routeDistance           Float?
+  routeDuration           Float?
+  routeWaypoints          Json?
+  routeQueue              Json?
+  routeLegIndex           Int      @default(0)
+  backupCode              String?
+  backupCodeGeneratedAt   DateTime?
+  loadingDurationSeconds  Int?
+  loadingStartedAt        DateTime?
+  unloadingDurationSeconds Int?
+  volumeM3                Float    @default(0)
+  canCompact              Boolean  @default(false)
+  isJalanProtokol         Boolean  @default(false)
+  maxTpsPerRoute          Int      @default(4)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
   @@map("trucks")
 }
 
 model SortingHub {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  code          String   @unique
-  name          String
-  type          String   // PLTSa | TPS3R | TRANSFER_STATION | COMPOSTING | RECYCLING | SMELTER | PAPER_MILL
-  kecamatan     String?
-  lat           Float
-  lng           Float
-  capacityKg    Float
-  currentLoadKg Float    @default(0)
-  acceptsTypes  String[] @default([])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  code            String   @unique
+  name            String
+  type            String
+  kecamatan       String?
+  lat             Float
+  lng             Float
+  capacityKg      Float
+  currentLoadKg   Float    @default(0)
+  dailyCapacityKg Float?
+  dailyIntakeKg   Float    @default(0)
+  lastIntakeReset DateTime @default(now())
+  acceptsTypes    String[] @default([])
+  operationalCostPerKg Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@map("sorting_hubs")
+}
+
+model ScheduledEvent {
+  id               String   @id @default(auto()) @map("_id") @db.ObjectId
+  eventId          String   @unique
+  eventName        String
+  month            Int?
+  day              Int?
+  dayOfWeek        Int?
+  targetKecamatan  String
+  targetKelurahan  String?
+  volumeMultiplier Float
+  locations        String[] @default([])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("scheduled_events")
+}
+
+model WasteRiskIndex {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  regionId          String
+  regionName        String
+  timestamp         DateTime @default(now())
+  avgFillLevel      Float
+  volumeTrend       Float
+  populationDensity Float
+  wriValue          Float
+  alpha             Float    @default(0.4)
+  beta              Float    @default(0.35)
+  gamma             Float    @default(0.25)
+  alertStatus       String
+  recommendedAction String?
+  createdAt         DateTime @default(now())
+
+  @@index([regionId, timestamp])
+  @@map("waste_risk_index")
+}
+
+model TpsOverloadPrediction {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  tpsId                String   @db.ObjectId
+  tpsCode              String
+  tpsName              String
+  timestamp            DateTime @default(now())
+  currentVolumeKg      Float
+  capacityKg           Float
+  fillLevel            Float
+  inflowRateKgPerHour  Float
+  outflowRateKgPerHour Float
+  netRateKgPerHour     Float
+  lambda               Float
+  overloadProb24h      Float
+  overloadProb48h      Float
+  overloadProb72h      Float
+  estimatedHoursToFull Float?
+  estimatedFullAt      DateTime?
+  riskLevel            String
+  createdAt            DateTime @default(now())
+
+  @@index([tpsId, timestamp])
+  @@map("tps_overload_predictions")
+}
+
+model FacilityUtilization {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  facilityId      String   @db.ObjectId
+  facilityCode    String
+  facilityName    String
+  timestamp       DateTime @default(now())
+  processed24hKg  Float
+  inTransitKg     Float
+  dailyCapacityKg Float
+  utilizationRate Float
+  status          String
+  canAcceptMore   Boolean
+  trucksEnRoute   Int
+  createdAt       DateTime @default(now())
+
+  @@index([facilityId, timestamp])
+  @@map("facility_utilization")
+}
+
+model RegionalPopulationDensity {
+  id                        String   @id @default(auto()) @map("_id") @db.ObjectId
+  regionId                  String   @unique
+  regionName                String
+  kecamatan                 String
+  population                Int
+  areaKm2                   Float
+  densityPerKm2             Float
+  wasteGenKgPerCapitaPerDay Float    @default(0.7)
+  densityMultiplier         Float
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@map("regional_population_density")
+}
+
+model CostOptimizationBaseline {
+  id                       String   @id @default(auto()) @map("_id") @db.ObjectId
+  periodStart              DateTime
+  periodEnd                DateTime
+  staticTotalDistanceKm    Float
+  staticTotalFuelL         Float
+  staticTotalCostRp        Float
+  staticAvgKmPerTon        Float
+  optimizedTotalDistanceKm Float
+  optimizedTotalFuelL      Float
+  optimizedTotalCostRp     Float
+  optimizedAvgKmPerTon     Float
+  distanceSavedKm          Float
+  fuelSavedL               Float
+  costSavedRp              Float
+  efficiencyGainPct        Float
+  testGroupSize            Int
+  controlGroupSize         Int
+  statisticalSignificance  Float
+  createdAt                DateTime @default(now())
+
+  @@map("cost_optimization_baseline")
 }

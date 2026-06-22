@@ -5,8 +5,8 @@ import "leaflet/dist/leaflet.css";
 import { toast } from "sonner";
 import { useAuth } from "../contexts/AuthContext";
 import {
-  Truck, ClipboardList, MapPin, CheckCircle, Play,
-  Package, Home, RefreshCw, Loader2, ArrowRight,
+  Truck, ClipboardList, CheckCircle,
+  Package, RefreshCw, Loader2,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:4000/api";
@@ -14,6 +14,7 @@ const API_BASE = "http://localhost:4000/api";
 interface TruckInfo {
   id: string; code: string; type: string; status: string;
   capacityKg: number; currentLoadKg: number; lat: number | null; lng: number | null; heading: number | null;
+  loadingDuration?: number | null;
 }
 
 interface Assignment {
@@ -50,8 +51,12 @@ export default function DriverPage() {
   const { user, logout } = useAuth();
   const [truck, setTruck] = useState<TruckInfo | null>(null);
   const [assignment, setAssignment] = useState<Assignment | null>(null);
-  const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [backupCode, setBackupCode] = useState<string | null>(null);
+  const [backupCodeInput, setBackupCodeInput] = useState("");
+  const [showBackupCodeInput, setShowBackupCodeInput] = useState(false);
+  const [loadingDuration, setLoadingDuration] = useState<number | null>(null);
+  const [unloadingDuration, setUnloadingDuration] = useState<number | null>(null);
 
   const token = localStorage.getItem("aurora_token") || "";
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -85,9 +90,56 @@ export default function DriverPage() {
       const data = await res.json();
       if (data.success) {
         toast.success(label);
+        if (endpoint === "arrive" && data.loadingDuration) {
+          setLoadingDuration(data.loadingDuration);
+        }
+        if (endpoint === "arrive-hub" && data.unloadingDuration) {
+          setUnloadingDuration(data.unloadingDuration);
+        }
         await fetchData();
       } else {
         toast.error(data.error || "Gagal");
+      }
+    } catch { toast.error("Koneksi gagal"); }
+    finally { setActionLoading(false); }
+  };
+
+  // Generate backup code
+  const doGenerateBackupCode = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/fleet/driver/generate-backup-code`, { method: "POST", headers });
+      const data = await res.json();
+      if (data.success) {
+        setBackupCode(data.backupCode);
+        toast.success(`Backup code: ${data.backupCode}`);
+      } else {
+        toast.error(data.error || "Gagal generate code");
+      }
+    } catch { toast.error("Koneksi gagal"); }
+    finally { setActionLoading(false); }
+  };
+
+  // Submit backup arrival
+  const doBackupArrive = async () => {
+    if (!backupCodeInput) {
+      toast.error("Masukkan backup code");
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/fleet/driver/backup-arrive`, {
+        method: "POST", headers,
+        body: JSON.stringify({ backupCode: backupCodeInput }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message);
+        setBackupCodeInput("");
+        setShowBackupCodeInput(false);
+        await fetchData();
+      } else {
+        toast.error(data.error || "Backup code tidak valid");
       }
     } catch { toast.error("Koneksi gagal"); }
     finally { setActionLoading(false); }
@@ -114,26 +166,6 @@ export default function DriverPage() {
     finally { setActionLoading(false); }
   };
 
-  // Release truck back to pool
-  const doRelease = async () => {
-    if (!truck || truck.status !== "AVAILABLE") {
-      toast.error("Truk masih dalam perjalanan");
-      return;
-    }
-    setActionLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/fleet/driver/release`, { method: "POST", headers });
-      const data = await res.json();
-      if (data.success) {
-        toast.success("Truk dilepas");
-        setTruck(null);
-        setAssignment(null);
-        fetchData();
-      }
-    } catch { toast.error("Koneksi gagal"); }
-    finally { setActionLoading(false); }
-  };
-
   // Route geometry
   const routeCoords = useMemo(() => {
     if (!assignment?.route?.geometry?.coordinates) return [];
@@ -143,28 +175,37 @@ export default function DriverPage() {
   // Use routeQueue for multi-TPS display
   const routeQueue = assignment?.routeQueue || [];
   const activeLeg = assignment?.activeLeg || null;
-  const pendingLegs = assignment?.pendingLegs || [];
-  const doneLegs = assignment?.doneLegs || [];
 
   // Current waypoint from activeLeg or waypoints (backward compat)
   const currentWp = activeLeg?.type === "TPS"
     ? { tpsId: activeLeg.tpsId, tpsName: activeLeg.tpsName, tpsLat: activeLeg.tpsLat, tpsLng: activeLeg.tpsLng, collectedKg: activeLeg.collectedKg || 0 }
     : assignment?.waypoints?.find((w) => w.collectedKg > 0);
 
-  // All TPS stops from routeQueue
+  // All TPS stops from routeQueue or waypoints (backward compat)
   const allTpsStops = useMemo(() => {
-    return routeQueue.filter((l) => l.type === "TPS").map((l, i) => ({
-      tpsId: l.tpsId || "",
-      tpsName: l.tpsName || "TPS",
-      tpsLat: l.tpsLat || 0,
-      tpsLng: l.tpsLng || 0,
-      collectedKg: l.collectedKg || 0,
-      status: l.status,
+    if (routeQueue.length > 0) {
+      return routeQueue.filter((l) => l.type === "TPS").map((l, i) => ({
+        tpsId: l.tpsId || "",
+        tpsName: l.tpsName || "TPS",
+        tpsLat: l.tpsLat || 0,
+        tpsLng: l.tpsLng || 0,
+        collectedKg: l.collectedKg || 0,
+        status: l.status,
+        order: i + 1,
+      }));
+    }
+    // Backward compat: use waypoints
+    return (assignment?.waypoints || []).filter((w) => w.collectedKg > 0).map((w, i) => ({
+      tpsId: w.tpsId || "",
+      tpsName: w.tpsName || "TPS",
+      tpsLat: w.tpsLat || 0,
+      tpsLng: w.tpsLng || 0,
+      collectedKg: w.collectedKg || 0,
+      status: "active",
       order: i + 1,
     }));
-  }, [routeQueue]);
+  }, [routeQueue, assignment?.waypoints]);
 
-  const nextWps = allTpsStops.filter((w) => w.status === "pending");
   const progressPct = assignment?.route?.progress ? Math.round(assignment.route.progress * 100) : 0;
 
   // Status-based rendering
@@ -217,6 +258,13 @@ export default function DriverPage() {
           progressPct={progressPct}
           onArrive={() => doAction("arrive", "Sampai di TPS!")}
           loading={actionLoading}
+          backupCode={backupCode}
+          backupCodeInput={backupCodeInput}
+          setBackupCodeInput={setBackupCodeInput}
+          showBackupCodeInput={showBackupCodeInput}
+          setShowBackupCodeInput={setShowBackupCodeInput}
+          onGenerateBackupCode={doGenerateBackupCode}
+          onBackupArrive={doBackupArrive}
         />
       )}
 
@@ -224,6 +272,7 @@ export default function DriverPage() {
         <LoadingScreen
           truck={truck}
           currentWp={currentWp}
+          loadingDuration={loadingDuration}
           onComplete={() => doAction("complete", "Selesai mengangkut!")}
           loading={actionLoading}
         />
@@ -242,7 +291,12 @@ export default function DriverPage() {
       )}
 
       {truck && status === "UNLOADING" && (
-        <UnloadingScreen truck={truck} onUnload={() => doAction("unload", "Selesai! Siap tugas baru 🔄")} loading={actionLoading} />
+        <UnloadingScreen 
+          truck={truck} 
+          unloadingDuration={unloadingDuration}
+          onUnload={() => doAction("unload", "Selesai! Siap tugas baru 🔄")} 
+          loading={actionLoading} 
+        />
       )}
     </div>
   );
@@ -396,6 +450,11 @@ function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignmen
   const totalDist = assignment.route.distance ? (assignment.route.distance / 1000).toFixed(1) : "?";
   const totalDuration = assignment.route.duration ? Math.round(assignment.route.duration / 60) : "?";
 
+  // Fallback: use waypoints if routeQueue is empty
+  const displayStops = tpsStops.length > 0
+    ? tpsStops.map((l, i) => ({ tpsId: l.tpsId || "", tpsName: l.tpsName || "TPS", collectedKg: l.collectedKg || 0, order: i + 1 }))
+    : (assignment.waypoints || []).filter((w) => w.collectedKg > 0).map((w, i) => ({ tpsId: w.tpsId, tpsName: w.tpsName, collectedKg: w.collectedKg, order: i + 1 }));
+
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="glass-panel" style={{ padding: "40px", maxWidth: "450px", width: "100%" }}>
@@ -425,10 +484,10 @@ function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignmen
           </div>
         </div>
 
-        {tpsStops.length > 0 && (
+        {displayStops.length > 0 && (
           <div style={{ marginBottom: "20px" }}>
             <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: "8px" }}>Rute Multi-Stop:</div>
-            {tpsStops.map((wp, i) => (
+            {displayStops.map((wp, i) => (
               <div key={wp.tpsId || i} style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", fontSize: "12px" }}>
                 <span style={{ width: "18px", height: "18px", borderRadius: "50%", background: "#3b82f6", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px", color: "white", fontWeight: "bold" }}>{i + 1}</span>
                 <span style={{ color: "var(--text-primary)" }}>{wp.tpsName}</span>
@@ -464,12 +523,22 @@ function AssignmentScreen({ assignment, onGo, loading }: { assignment: Assignmen
   );
 }
 
-function NavigationScreen({ truck, assignment, routeCoords, currentWp, allTpsStops, progressPct, onArrive, loading }: {
+function NavigationScreen({ 
+  truck, assignment, routeCoords, currentWp, allTpsStops, progressPct, onArrive, loading,
+  backupCode, backupCodeInput, setBackupCodeInput, showBackupCodeInput, setShowBackupCodeInput,
+  onGenerateBackupCode, onBackupArrive
+}: {
   truck: TruckInfo; assignment: Assignment; routeCoords: [number, number][];
   currentWp: any; allTpsStops: any[]; progressPct: number; onArrive: () => void; loading: boolean;
+  backupCode: string | null; backupCodeInput: string; setBackupCodeInput: (val: string) => void;
+  showBackupCodeInput: boolean; setShowBackupCodeInput: (val: boolean) => void;
+  onGenerateBackupCode: () => void; onBackupArrive: () => void;
 }) {
+  const etaMin = assignment.route.duration ? Math.round(assignment.route.duration * (1 - progressPct / 100) / 60) : null;
+  const distKm = assignment.route.distance ? (assignment.route.distance / 1000).toFixed(1) : "?";
+
   return (
-    <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 300px", gap: "16px", minHeight: 0 }}>
+    <div style={{ flex: 1, display: "grid", gridTemplateColumns: "1fr 320px", gap: "16px", minHeight: 0 }}>
       {/* Map */}
       <div className="glass-panel" style={{ borderRadius: "12px", overflow: "hidden", position: "relative" }}>
         <MapContainer
@@ -517,22 +586,33 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, allTpsSto
           <div style={{ height: "6px", background: "rgba(255,255,255,0.08)", borderRadius: "3px" }}>
             <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg, #3b82f6, #60a5fa)", borderRadius: "3px", transition: "width 0.5s ease" }} />
           </div>
+          {etaMin != null && (
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "10px", color: "var(--text-secondary)" }}>
+              <span>{distKm} km</span>
+              <span>ETA: {etaMin < 60 ? `${etaMin}m` : `${Math.floor(etaMin / 60)}j ${etaMin % 60}m`}</span>
+            </div>
+          )}
         </div>
       </div>
 
-        {/* Info panel */}
+      {/* Info panel */}
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflow: "auto" }}>
+        {/* Current stop */}
         <div className="glass-panel" style={{ padding: "16px", borderLeft: "3px solid #3b82f6" }}>
-          <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Menuju TPS</div>
-          <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>{currentWp?.tpsName || "—"}</div>
+          <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            {currentWp ? "Menuju TPS" : "Menuju Fasilitas"}
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: 700, color: "var(--text-primary)" }}>
+            {currentWp?.tpsName || assignment.facility?.name || "—"}
+          </div>
           <div style={{ display: "flex", gap: "12px", fontSize: "11px", marginTop: "8px" }}>
-            <span style={{ color: "var(--text-secondary)" }}>{assignment.route.distance ? (assignment.route.distance / 1000).toFixed(1) : 0} km</span>
+            <span style={{ color: "var(--text-secondary)" }}>{distKm} km</span>
             <span style={{ color: "var(--text-secondary)" }}>{assignment.route.duration ? Math.round(assignment.route.duration / 60) : 0} menit</span>
             <span style={{ color: "var(--text-secondary)" }}>{truck.currentLoadKg.toLocaleString()} / {truck.capacityKg.toLocaleString()} kg</span>
           </div>
         </div>
 
-        {/* Full route queue display */}
+        {/* Route queue display */}
         {allTpsStops.length > 0 && (
           <div className="glass-panel" style={{ padding: "16px" }}>
             <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "8px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Rute Lengkap</div>
@@ -569,6 +649,64 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, allTpsSto
           </div>
         )}
 
+        {/* Backup Code Section */}
+        <div style={{ marginBottom: "16px", padding: "12px", borderRadius: "8px", background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.2)" }}>
+          <div style={{ fontSize: "11px", fontWeight: 600, color: "#3b82f6", marginBottom: "8px" }}>🔐 Backup Code (GPS Error)</div>
+          {backupCode ? (
+            <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", letterSpacing: "1px", textAlign: "center", padding: "12px", background: "rgba(59,130,246,0.2)", borderRadius: "6px", fontFamily: "monospace" }}>
+              {backupCode}
+            </div>
+          ) : (
+            <button
+              onClick={onGenerateBackupCode}
+              disabled={loading}
+              style={{
+                width: "100%", padding: "8px", borderRadius: "6px",
+                background: "rgba(59,130,246,0.2)", color: "#3b82f6", border: "1px solid #3b82f6",
+                fontSize: "12px", fontWeight: 600, cursor: loading ? "wait" : "pointer",
+              }}
+            >
+              {loading ? "Membuat..." : "Generate Backup Code"}
+            </button>
+          )}
+          {showBackupCodeInput && (
+            <div style={{ marginTop: "8px", display: "flex", gap: "8px" }}>
+              <input
+                type="text"
+                value={backupCodeInput}
+                onChange={(e) => setBackupCodeInput(e.target.value.toUpperCase())}
+                placeholder="Masukkan 6-char code"
+                style={{
+                  flex: 1, padding: "8px", borderRadius: "6px", border: "1px solid rgba(255,255,255,0.2)",
+                  background: "rgba(255,255,255,0.05)", color: "#fff", fontSize: "12px",
+                }}
+              />
+              <button
+                onClick={onBackupArrive}
+                disabled={loading}
+                style={{
+                  padding: "8px 16px", borderRadius: "6px", background: "#10b981", color: "white",
+                  border: "none", fontSize: "11px", fontWeight: 600, cursor: loading ? "wait" : "pointer",
+                }}
+              >
+                {loading ? "..." : "OK"}
+              </button>
+            </div>
+          )}
+          {!showBackupCodeInput && backupCode && (
+            <button
+              onClick={() => setShowBackupCodeInput(true)}
+              style={{
+                width: "100%", marginTop: "8px", padding: "8px", borderRadius: "6px",
+                background: "rgba(245,158,11,0.2)", color: "#f59e0b", border: "1px solid #f59e0b",
+                fontSize: "11px", fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              Gunakan Backup Code
+            </button>
+          )}
+        </div>
+
         <button
           onClick={onArrive}
           disabled={loading}
@@ -586,10 +724,11 @@ function NavigationScreen({ truck, assignment, routeCoords, currentWp, allTpsSto
   );
 }
 
-function LoadingScreen({ truck, currentWp, onComplete, loading }: {
-  truck: TruckInfo; currentWp: any; onComplete: () => void; loading: boolean;
+function LoadingScreen({ truck: _truck, currentWp, loadingDuration, onComplete, loading }: {
+  truck: TruckInfo; currentWp: any; loadingDuration: number | null; onComplete: () => void; loading: boolean;
 }) {
-  const [secondsLeft, setSecondsLeft] = useState(240); // 4 minutes
+  const durationSeconds = loadingDuration ?? 240;
+  const [secondsLeft, setSecondsLeft] = useState(durationSeconds);
   const [autoAdvanced, setAutoAdvanced] = useState(false);
 
   useEffect(() => {
@@ -598,7 +737,6 @@ function LoadingScreen({ truck, currentWp, onComplete, loading }: {
       setSecondsLeft((prev) => {
         if (prev <= 1) {
           clearInterval(interval);
-          // Auto-advance
           setAutoAdvanced(true);
           fetch("http://localhost:4000/api/fleet/driver/auto-advance", {
             method: "POST",
@@ -619,28 +757,42 @@ function LoadingScreen({ truck, currentWp, onComplete, loading }: {
 
   const minutes = Math.floor(secondsLeft / 60);
   const seconds = secondsLeft % 60;
+  const progressPct = Math.round(((durationSeconds - secondsLeft) / durationSeconds) * 100);
 
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="glass-panel" style={{ padding: "48px", textAlign: "center", maxWidth: "400px" }}>
         <Loader2 size={56} style={{ color: "var(--text-secondary)", opacity: 0.3, marginBottom: "16px" }} className="animate-spin" />
         <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "8px" }}>Proses Mengangkut</div>
-        {currentWp && (
+        {currentWp ? (
           <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px" }}>
             TPS: <strong style={{ color: "var(--text-primary)" }}>{currentWp.tpsName}</strong>
             <br />
             Volume: {currentWp.collectedKg.toLocaleString()} kg
+          </div>
+        ) : (
+          <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px" }}>
+            Menunggu konfirmasi...
           </div>
         )}
         <div style={{ padding: "10px 16px", borderRadius: "8px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", fontSize: "12px", color: "#f59e0b", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
           <Loader2 size={14} className="animate-spin" />
           Sedang mengangkut sampah...
         </div>
-        {/* Countdown timer */}
-        <div style={{ padding: "8px 12px", borderRadius: "6px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "16px" }}>
-          <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "4px" }}>Auto-advance dalam</div>
-          <div style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>
-            {minutes}:{seconds.toString().padStart(2, "0")}
+        {/* Countdown timer with progress bar */}
+        <div style={{ padding: "12px 16px", borderRadius: "8px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <span style={{ fontSize: "10px", color: "var(--text-secondary)" }}>Waktu Muat</span>
+            <span style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>
+              {minutes}:{seconds.toString().padStart(2, "0")}
+            </span>
+          </div>
+          <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "4px", overflow: "hidden" }}>
+            <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg, #f59e0b, #fbbf24)", borderRadius: "4px", transition: "width 1s linear" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "10px", color: "var(--text-secondary)" }}>
+            <span>{Math.floor(durationSeconds / 60)} menit total</span>
+            <span>{progressPct}%</span>
           </div>
         </div>
         <button
@@ -725,17 +877,79 @@ function HubNavigationScreen({ truck, assignment, routeCoords, progressPct, onAr
   );
 }
 
-function UnloadingScreen({ truck, onUnload, loading }: { truck: TruckInfo; onUnload: () => void; loading: boolean }) {
+function UnloadingScreen({ truck, unloadingDuration, onUnload, loading }: { 
+  truck: TruckInfo; unloadingDuration: number | null; onUnload: () => void; loading: boolean; 
+}) {
+  const durationSeconds = unloadingDuration ?? 180;
+  const [secondsLeft, setSecondsLeft] = useState(durationSeconds);
+  const [autoAdvanced, setAutoAdvanced] = useState(false);
+
+  useEffect(() => {
+    if (autoAdvanced) return;
+    const interval = setInterval(() => {
+      setSecondsLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setAutoAdvanced(true);
+          fetch("http://localhost:4000/api/fleet/driver/unload", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${localStorage.getItem("aurora_token") || ""}`,
+            },
+          }).then(() => {
+            window.location.reload();
+          });
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [autoAdvanced]);
+
+  const minutes = Math.floor(secondsLeft / 60);
+  const seconds = secondsLeft % 60;
+  const progressPct = Math.round(((durationSeconds - secondsLeft) / durationSeconds) * 100);
+
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div className="glass-panel" style={{ padding: "48px", textAlign: "center", maxWidth: "400px" }}>
-        <div style={{ fontSize: "64px", marginBottom: "20px" }}><Package size={64} style={{ color: "var(--text-secondary)", opacity: 0.3 }} /></div>
+        <Package size={56} style={{ color: "var(--text-secondary)", opacity: 0.3, marginBottom: "16px" }} />
         <div style={{ fontSize: "18px", fontWeight: 700, color: "var(--text-primary)", marginBottom: "8px" }}>Membongkar Muatan</div>
-        <div style={{ fontSize: "14px", color: "var(--text-secondary)", marginBottom: "24px" }}>
-          Muatan: {truck.currentLoadKg.toLocaleString()} kg
+        <div style={{ fontSize: "13px", color: "var(--text-secondary)", marginBottom: "16px" }}>
+          Muatan: <strong style={{ color: "var(--text-primary)" }}>{truck.currentLoadKg.toLocaleString()} kg</strong>
         </div>
-        <button onClick={onUnload} disabled={loading} style={{ width: "100%", padding: "14px", borderRadius: "10px", background: "linear-gradient(135deg, #10b981, #059669)", color: "white", border: "none", fontSize: "14px", fontWeight: 700, cursor: loading ? "wait" : "pointer", display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
-          {loading ? "Memuat..." : "Selesai, Siap Tugas Baru"}
+        <div style={{ padding: "10px 16px", borderRadius: "8px", background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", fontSize: "12px", color: "#8b5cf6", marginBottom: "12px", display: "flex", alignItems: "center", gap: "8px", justifyContent: "center" }}>
+          <RefreshCw size={14} className="animate-spin" />
+          Sedang membongkar sampah...
+        </div>
+        {/* Countdown timer with progress bar */}
+        <div style={{ padding: "12px 16px", borderRadius: "8px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+            <span style={{ fontSize: "10px", color: "var(--text-secondary)" }}>Waktu Bongkar</span>
+            <span style={{ fontSize: "20px", fontWeight: 700, color: "var(--text-primary)", fontFamily: "monospace" }}>
+              {minutes}:{seconds.toString().padStart(2, "0")}
+            </span>
+          </div>
+          <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "4px", overflow: "hidden" }}>
+            <div style={{ width: `${progressPct}%`, height: "100%", background: "linear-gradient(90deg, #8b5cf6, #a78bfa)", borderRadius: "4px", transition: "width 1s linear" }} />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", fontSize: "10px", color: "var(--text-secondary)" }}>
+            <span>{Math.floor(durationSeconds / 60)} menit total</span>
+            <span>{progressPct}%</span>
+          </div>
+        </div>
+        <button
+          onClick={onUnload}
+          disabled={loading || autoAdvanced}
+          style={{
+            width: "100%", padding: "14px", borderRadius: "10px",
+            background: "linear-gradient(135deg, #10b981, #059669)", color: "white",
+            border: "none", fontSize: "14px", fontWeight: 700, cursor: loading ? "wait" : "pointer",
+          }}
+        >
+          {loading ? "Memuat..." : autoAdvanced ? "Auto: Muatan dibongkar" : "Selesai Membongkar"}
         </button>
       </div>
     </div>

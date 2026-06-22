@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { prisma } from "../../config/db.js";
 import { AuthRequest } from "../../middleware/auth.js";
+import { getCriticalTps } from "./tps-alert.service.js";
 
 interface SSEClient {
   res: Response;
@@ -40,7 +41,7 @@ export async function fleetSSEHandler(req: AuthRequest, res: Response) {
 
   // Send initial data
   try {
-    const [trucks, tpsList] = await Promise.all([
+    const [trucks, tpsList, allFacilities, criticalTps] = await Promise.all([
       prisma.truck.findMany({
         orderBy: { code: "asc" },
       }),
@@ -52,17 +53,20 @@ export async function fleetSSEHandler(req: AuthRequest, res: Response) {
           status: true, type: true,
         },
       }),
+      prisma.sortingHub.findMany(),
+      getCriticalTps(),
     ]);
 
+    // Only facilities with active trucks
     const facilityIds = [...new Set(trucks.map((t) => t.facilityId).filter(Boolean))];
     const facilities = facilityIds.length > 0
-      ? await prisma.sortingHub.findMany({ where: { id: { in: facilityIds as string[] } } })
+      ? allFacilities.filter((f) => facilityIds.includes(f.id))
       : [];
 
-    res.write(`data: ${JSON.stringify({ type: "init", trucks, tps: tpsList, facilities })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "init", trucks, tps: tpsList, facilities, allFacilities, criticalTps })}\n\n`);
   } catch (err) {
     // Send empty init
-    res.write(`data: ${JSON.stringify({ type: "init", trucks: [], tps: [], facilities: [] })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "init", trucks: [], tps: [], facilities: [], allFacilities: [], criticalTps: [] })}\n\n`);
   }
 
   req.on("close", () => {
